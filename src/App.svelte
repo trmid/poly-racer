@@ -6,8 +6,8 @@
 <main>
   <header>
     <a href="/" use:link>Home</a>
+    <a href="/race/asdfasdfa" use:link>Race</a>
     <a href="/about" use:link>About</a>
-    <a href="/404" use:link>404</a>
   </header>
 	<Router {routes}/>
 </main>

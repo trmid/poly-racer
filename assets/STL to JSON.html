@@ -1,0 +1,106 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+  <meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+  <title>STL to JSON</title>
+  <script type='text/javascript'>
+
+    function loadFile() {
+      var input, file, fr;
+
+      if (typeof window.FileReader !== 'function') {
+        console.log("The file API isn't supported on this browser yet.");
+        return;
+      }
+
+      input = document.getElementById('fileinput');
+      if (!input) {
+        console.log("Couldn't find the fileinput element.");
+      }
+      else if (!input.files) {
+        console.log("This browser doesn't seem to support the `files` property of file inputs.");
+      }
+      else if (!input.files[0]) {
+        console.log("Please select a file before clicking 'Load'");
+      }
+      else {
+        file = input.files[0];
+        fr = new FileReader();
+        fr.onload = convertFile;
+        fr.readAsBinaryString(file);
+      }
+
+      function convertFile() {
+        showResult(fr, file);
+      }
+    }
+
+    function showResult(fr, file) {
+      let points = [];
+      let result = fr.result;
+      console.log(toUint(
+        result[80].charCodeAt(0),
+        result[80 + 1].charCodeAt(0),
+        result[80 + 2].charCodeAt(0),
+        result[80 + 3].charCodeAt(0)));
+      for (let n = 84 + 12; n < result.length; n += 50) {
+        for (let i = 0; i < 3; i++) {
+          for (let j = 0; j < 3; j++) {
+            let point = toFloat(
+              result[n + (4 * j) + (12 * i)].charCodeAt(0),
+              result[n + (4 * j) + (12 * i) + 1].charCodeAt(0),
+              result[n + (4 * j) + (12 * i) + 2].charCodeAt(0),
+              result[n + (4 * j) + (12 * i) + 3].charCodeAt(0));
+            points.push(point);
+          }
+        }
+      }
+      download(JSON.stringify(points), file.name + ".json", "text/plain");
+    }
+
+    function download(content, fileName, contentType) {
+      var a = document.createElement("a");
+      var file = new Blob([content], { type: contentType });
+      a.href = URL.createObjectURL(file);
+      a.download = fileName;
+      a.click();
+    }
+
+    function toFloat(b3, b2, b1, b0) {
+      var data = [b0, b1, b2, b3];
+      // Create a buffer
+      var buf = new ArrayBuffer(4);
+      // Create a data view of it
+      var view = new DataView(buf);
+      // set bytes
+      data.forEach(function (b, idx) {
+        view.setUint8(idx, b);
+      });
+      return view.getFloat32(0);
+    }
+
+    function toUint(b3, b2, b1, b0) {
+      var data = [b0, b1, b2, b3];
+      // Create a buffer
+      var buf = new ArrayBuffer(4);
+      // Create a data view of it
+      var view = new DataView(buf);
+      // set bytes
+      data.forEach(function (b, idx) {
+        view.setUint8(idx, b);
+      });
+      return view.getUint32(0);
+    }
+
+  </script>
+</head>
+
+<body>
+  <form action='#' onsubmit="return false;">
+    <input type='file' id='fileinput'>
+    <input type='button' id='btnLoad' value='Load' onclick='loadFile();'>
+  </form>
+</body>
+
+</html>

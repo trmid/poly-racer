@@ -17,11 +17,7 @@ self.addEventListener("install", event => {
 
         // JS Files
         "build/bundle.js",
-
-        // Images
-        "img/crazy_bean.jpeg",
-        "img/cute_bean.jpeg",
-        "img/derpy_bean.jpeg",
+				"urchin.min.js",
 
         // Icons
         "favicon.png"
