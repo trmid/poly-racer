@@ -3,24 +3,52 @@
   import { routes } from "./routes";
 </script>
 
-<main>
-  <header>
+<header>
+  <div class="headerContent">
     <a href="/" use:link>Home</a>
     <a href="/race/asdfasdfa" use:link>Race</a>
     <a href="/about" use:link>About</a>
-  </header>
+  </div>
+</header>
+
+<main>
 	<Router {routes}/>
 </main>
 
 <style>
-	main {
-		text-align: center;
-		padding: 1em;
-		max-width: 1024px;
-		margin: 0 auto;
-	}
+
+  header {
+    display: flex;
+    justify-content: center;
+    background-color: #ee3b2b;
+    border-bottom: 2px solid black;
+  }
+
+  header .headerContent {
+    max-width: 1024px;
+    padding: .5em;
+  }
 
   header a {
-    margin: 1rem;
+    margin: 0 1.5em;
+    color: white;
+    text-decoration: none;
   }
+
+  main {
+		max-width: 1024px;
+		margin: 0 auto;
+		padding: 5em;
+		text-align: center;
+	}
+
+  @media screen and (max-width: 400px) {
+    main {
+      padding: 5em 1em;
+    }
+    header a {
+      margin: 0 .5em;
+    }
+  }
+
 </style>
