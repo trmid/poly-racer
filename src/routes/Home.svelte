@@ -36,7 +36,7 @@
 <!-- #################################################################################################### -->
 
 <span class="homeLogo">
-	<img src="/favicon.png" alt="Poly Track">
+	<img src="favicon.png" alt="Poly Track">
 	<span>Poly Track</span>
 </span>
 
@@ -97,6 +97,7 @@
 
 	.actionItems {
 		display: flex;
+		flex-wrap: wrap;
 	}
 
 	.actionItems .actionInfo {
@@ -161,6 +162,10 @@
 	.actionItems .error {
 		color: red;
 		font-size: .8em;
+	}
+
+	#car {
+		max-width: 100%;
 	}
 
 	@media screen and (max-width: 800px) {

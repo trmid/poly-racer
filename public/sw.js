@@ -20,7 +20,10 @@ self.addEventListener("install", event => {
 				"urchin.min.js",
 
         // Icons
-        "favicon.png"
+        "favicon.png",
+
+				// Images
+				"img/polyBG.png"
 
 			]);
 		})
