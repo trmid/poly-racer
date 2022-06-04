@@ -17,7 +17,7 @@ self.addEventListener("install", event => {
 
         // JS Files
         "build/bundle.js",
-				"urchin.min.js",
+				"urchin.js",
 
         // Icons
         "favicon.png"
