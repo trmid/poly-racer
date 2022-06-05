@@ -14,6 +14,9 @@ import { zeroPad } from "../ts/utils";
     push("/");
   }
 
+  // Mount state:
+  let mounted = false;
+
   // Canvas:
   let canvas: HTMLCanvasElement;
 
@@ -34,10 +37,12 @@ import { zeroPad } from "../ts/utils";
   // Volume controls:
   let volume = 0.8;
   $: if(race) race.setVolume(volume);
+  $: if(mounted) localStorage.setItem("volume", "" + volume);
 
   // On Mount:
   const unsubscribes: Unsubscriber[] = [];
   onMount(() => {
+    volume = parseFloat(localStorage.getItem("volume") ?? "" + volume);
     race = new Race(seed, canvas);
     unsubscribes.push(
       race.stores.centerText.subscribe(text => centerText = text),
@@ -46,6 +51,7 @@ import { zeroPad } from "../ts/utils";
       race.stores.completedLaps.subscribe(l => laps = l),
       race.stores.gameTime.subscribe(t => gameTime = t),
     );
+    mounted = true;
   });
 
   // On Destroy:
@@ -81,6 +87,10 @@ import { zeroPad } from "../ts/utils";
 </div>
 
 <style>
+
+  #canvas-container > canvas {
+    max-width: 100%;
+  }
 
   #canvas-container {
     margin: 1rem;
