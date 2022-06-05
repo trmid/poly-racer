@@ -5,6 +5,7 @@ import raceCarFrontWheelSTL from "../../assets/racecar_front_wheel.stl.json";
 import { now, PolySynth, Synth, Transport, Volume } from "tone";
 import { buildTrackMesh } from "./track";
 import { EngineSound } from "./engine";
+import { writable } from "svelte/store";
 
 export class Race {
 
@@ -19,6 +20,19 @@ export class Race {
   private paused = true;
   private done = false;
   private unpauseTimeouts: NodeJS.Timeout[] = [];
+  private gameTime = 0;
+
+  // Lap Settings:
+  static totalLaps = 3;
+
+  // Stores:
+  public stores = {
+    centerText: writable("Click to Start!"),
+    speed: writable(0),
+    paused: writable(this.paused),
+    gameTime: writable(0),
+    completedLaps: writable<number[]>([]),
+  };
   
   // Sound Settings:
   private volumeNode = new Volume(-10);
@@ -48,7 +62,7 @@ export class Race {
   // Car Physics:
   private direction = new Vector(1, 0, 0);
   private speed = 0; // m/s
-  private maxSpeed = 103.47 // m/s
+  static maxSpeed = 103.47 // m/s
   private acceleration = new Vector(); // m/(s*s)
   static forwardAcceleration = new Vector(9.92);
   static reverseAcceleration = Vector.neg(Race.forwardAcceleration).mult(3.5);
@@ -67,7 +81,7 @@ export class Race {
   private right = false;
 
   // Listeners:
-  private eventListeners: {event: string, function: <E extends Event>(e: E) => void}[] = [];
+  private eventListeners: {element: Window | Element, event: string, function: <E extends Event>(e: E) => void}[] = [];
 
   constructor(readonly seed: string, readonly canvas: HTMLCanvasElement) {
 
@@ -233,6 +247,7 @@ export class Race {
 
     // Add window event listeners:
     this.eventListeners.push({
+      element: window,
       event: "keydown",
       function: (e: any) => {
         switch(e.key.toUpperCase()) {
@@ -259,6 +274,7 @@ export class Race {
         }
       }
     },{
+      element: window,
       event: "keyup",
       function: (e: any) => {
         switch(e.key.toUpperCase()) {
@@ -286,20 +302,22 @@ export class Race {
       }
     },
     {
-      event: "focus",
-      function: (e: any) => {
-        this.timer.startTimer();
-        this.start();
-      }
-    },
-    {
+      element: window,
       event: "blur",
       function: (e: any) => {
         this.pause();
       }
+    },
+    {
+      element: canvas,
+      event: "click",
+      function: (e: any) => {
+        if(self.paused) self.start();
+        else self.pause();
+      }
     });
     for(const listener of this.eventListeners) {
-      window.addEventListener(listener.event, listener.function);
+      listener.element.addEventListener(listener.event, listener.function);
     }
 
   }
@@ -319,9 +337,14 @@ export class Race {
 
       // Unpause game:
       this.paused = false;
+      this.stores.paused.set(false);
       this.canvas.focus();
 
+      // Set center text:
+      this.stores.centerText.set("");
+
       // Start rendering:
+      this.timer.startTimer();
       this.renderer.start(this.scene, this.camera);
 
       // Connect volume node:
@@ -343,22 +366,26 @@ export class Race {
       this.engineSound.start();
 
       // Set game state:
+      this.stores.centerText.set("3");
       this.unpauseTimeouts = [
+        setTimeout(() => this.stores.centerText.set("2"), 1000),
+        setTimeout(() => this.stores.centerText.set("1"), 2000),
         setTimeout(() => {
+          this.stores.centerText.set("GO!");
           this.playing = true;
-        }, 3000)
+        }, 3000),
+        setTimeout(() => this.stores.centerText.set(""), 4000)
       ];
 
     }
 
   }
 
-  public isPaused() {
-    return this.paused;
-  }
-
   public pause() {
     if(!this.paused) {
+
+      // Set center text:
+      this.stores.centerText.set("Click to Resume...");
 
       // Clear unpause timeouts:
       for(const timeout of this.unpauseTimeouts) {
@@ -368,6 +395,7 @@ export class Race {
       // Pause game:
       this.playing = false;
       this.paused = true;
+      this.stores.paused.set(true);
       this.renderer.stop();
       
       // Pause engine sounds:
@@ -387,14 +415,19 @@ export class Race {
    * Frame callback:
    */
   private draw() {
-    const t = this.timer.readCheckpoint() / 1000;
+    const millisecondsElapsed = this.timer.readCheckpoint();
+    const t = millisecondsElapsed / 1000;
 
-    // Handle Acceleration:
     if(this.playing) {
+      // Add to game time:
+      this.gameTime += millisecondsElapsed;
+      this.stores.gameTime.set(this.gameTime);
+      
+      // Handle Acceleration:
       this.acceleration = new Vector();
       if(this.up) {
         // Gas:
-        this.acceleration.add(Vector.qRotate(Vector.mult(Race.forwardAcceleration, this.speed < this.maxSpeed/2 ? Math.min(4, this.maxSpeed / this.speed) : 1), this.car.orientation));
+        this.acceleration.add(Vector.qRotate(Vector.mult(Race.forwardAcceleration, this.speed < Race.maxSpeed / 2 ? Math.min(4, Race.maxSpeed / this.speed) : 1), this.car.orientation));
       } else {
         // Drag:
         this.acceleration.add(Vector.qRotate(Race.drag, this.car.orientation));
@@ -419,21 +452,21 @@ export class Race {
       if(this.speed < 0.0001) {
         // full stop
         this.speed = 0;
-      } else if(this.speed > this.maxSpeed) {
+      } else if(this.speed > Race.maxSpeed) {
         // limit
-        this.speed = this.maxSpeed;
+        this.speed = Race.maxSpeed;
       }
       this.backWheels.orientation.rotateY(t * Math.PI * 2 * this.speed / Race.backWheelCircumference);
       this.frontLeftWheel.orientation.rotateY(t * Math.PI * 2 * this.speed / Race.frontWheelCircumference);
       this.frontRightWheel.orientation.rotateY(t * Math.PI * 2 * this.speed / Race.frontWheelCircumference);
 
       // Update engine noise:
-      this.engineSound.update(this.speed / this.maxSpeed);
+      this.engineSound.update(this.speed / Race.maxSpeed);
 
       // Handle turning:
       let turnDirection = (this.left ? 1 : 0) + (this.right ? -1 : 0);
       if(turnDirection == 0) turnDirection = -Math.sign(this.turnAngle);
-      let turnSpeedModifier = Math.pow(1 - this.speed / (this.maxSpeed * 1.5), 2);
+      let turnSpeedModifier = Math.pow(1 - this.speed / (Race.maxSpeed * 1.5), 2);
       let currentMaxTurn = this.maxTurn * turnSpeedModifier;
       let newTurnAngle = Num.constrain(this.turnAngle + (turnDirection * this.turnSensitivity * turnSpeedModifier * t) * (turnDirection == -Math.sign(this.turnAngle) ? 1.5 : 1), -currentMaxTurn, currentMaxTurn);
       if(this.turnAngle != 0 && Math.sign(this.turnAngle) != Math.sign(newTurnAngle)) {
@@ -459,8 +492,11 @@ export class Race {
       this.car.orientation = carOrientation;
 
       // Move camera orientation based off of heading and speed:
-      this.camera.position = Vector.add(Race.defaultCameraPosition, new Vector(-1).mult(this.speed / this.maxSpeed).rotateZ(this.turnAngle*2));
-      // camera.orientation = Quaternion.rotateZ(defaultCameraOrientation, turnAngle * (this.speed / this.maxSpeed));
+      this.camera.position = Vector.add(Race.defaultCameraPosition, new Vector(-1).mult(this.speed / Race.maxSpeed).rotateZ(this.turnAngle*2));
+      // camera.orientation = Quaternion.rotateZ(defaultCameraOrientation, turnAngle * (this.speed / Race.maxSpeed));
+
+      // Set speed store:
+      this.stores.speed.set(this.speed * 60 * 60 / 1000);
     }
   }
 
@@ -472,7 +508,7 @@ export class Race {
 
     // Remove listeners:
     for(const listener of this.eventListeners) {
-      window.removeEventListener(listener.event, listener.function);
+      listener.element.removeEventListener(listener.event, listener.function);
     }
 
     // Destroy engine sound:
