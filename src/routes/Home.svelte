@@ -1,12 +1,15 @@
-<script>
+<script type="ts">
 
 	// Imports:
-	import { onMount } from "svelte";
+	import { onDestroy, onMount } from "svelte";
 	import { push } from 'svelte-spa-router';
+  import { Volume } from "tone";
+  import { Car } from "../ts/car";
 
 	// Initializations:
 	let seed = '';
 	let seedError = '';
+  let carPreviewCanvas: HTMLCanvasElement;
 
 	// Function to navigate to racing page with seed:
 	const navRaceWithSeed = () => {
@@ -23,13 +26,41 @@
 
 	onMount(() => {
 
-		// Temporary Canvas Text <TODO - Remove This>
-		let canvas = document.getElementById('car');
-		let ctx = canvas.getContext('2d');
-		ctx.textAlign = 'center';
-		ctx.fillText('<Add Car Preview Here>', canvas.width / 2, canvas.height / 2);
+    // Create scene:
+    let scene = new Scene();
+    scene.add(new AmbientLight());
+    scene.add(new DirectionalLight({
+        color: new Color("white"),
+        direction: new Vector(1,1,-5),
+        brightness: 1
+    }));
+
+    // Add car:
+		let car = new Car(new Volume());
+    scene.add(car.body);
+
+    // Create Camera:
+    let cameraPosition = new Vector(5, -1, 1);
+    let cameraOrientation = Quaternion.fromAxisRotation(Vector.Y_AXIS, Math.PI * 0.06).rotateZ(Math.PI * 0.92);
+    let camera = new Camera({
+      position: cameraPosition,
+      orientation: cameraOrientation,
+      fov: 50
+    });
+
+    // Create Renderer:
+    const renderer = new Renderer({
+      canvas: carPreviewCanvas,
+      backgroundColor: new Color(0, 0, 0, 0)
+    });
+    renderer.render(scene, camera);
 
 	});
+
+  onDestroy(() => {
+    // Reload page to remove render workers:
+    location.reload();
+  });
 
 </script>
 
@@ -64,7 +95,7 @@
 		</span>
 	</span>
 	<span class="carPreview">
-		<canvas id="car" width="500" height="500" />
+		<canvas id="car" width="500" height="500" bind:this={carPreviewCanvas}/>
 	</span>
 </div>
 
@@ -98,6 +129,7 @@
 	.actionItems {
 		display: flex;
 		flex-wrap: wrap;
+    justify-content: center;
 	}
 
 	.actionItems .actionInfo {
