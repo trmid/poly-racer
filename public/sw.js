@@ -1,4 +1,4 @@
-const cacheName = "1.0.0"; // Change value to force update
+const cacheName = "1.0.1"; // Change value to force update
 
 self.addEventListener("install", event => {
 	// Kick out the old service worker
@@ -17,7 +17,7 @@ self.addEventListener("install", event => {
 
         // JS Files
         "build/bundle.js",
-				"urchin.js",
+				"urchin.min.js",
 
         // Icons
         "favicon.png",
