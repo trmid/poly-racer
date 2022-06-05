@@ -95,23 +95,6 @@ export class Race {
       }));
     }
 
-    // Add dirt:
-    {
-      // const count = 100;
-      // for(let i = 0; i < count; i++) {
-      //   const dirtMesh = Mesh.plane().scale(new Vector(1 + Math.random() * 10, 1 + Math.random() * 10, 1));
-      //   const dirt = new MeshUrbject({
-      //     position: new Vector(Math.random() * 300 - 150, Math.random() * 300 - 150),
-      //     orientation: Quaternion.fromAxisRotation(Vector.Z_AXIS, Math.random()*Math.PI),
-      //     group: -5,
-      //     state: Urbject.STATIC,
-      //     mesh: dirtMesh,
-      //     material: new Material({ fill: new Color(40) })
-      //   });
-      //   scene.add(dirt);
-      // }
-    }
-
     // Add trees:
     {
       const count = 100;
@@ -141,7 +124,7 @@ export class Race {
       canvas,
       frameCallback: () => this.draw(),
       backgroundColor: new Color(50),
-      showPerformance: true
+      showPerformance: false
     });
     this.renderer.render(scene, this.car.camera);
 
