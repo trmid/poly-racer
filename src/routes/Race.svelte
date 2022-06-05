@@ -18,6 +18,22 @@
   // Race:
   let race: Race;
 
+  // Volume controls:
+  let volume = 0.8;
+  $: if(race) race.setVolume(volume);
+
+  // Function to toggle play state:
+  let playPauseMsg = "Start";
+  const togglePlayState = () => {
+    if(race.isPaused()) {
+      playPauseMsg = "Pause";
+      race.start()
+    } else {
+      playPauseMsg = "Start";
+      race.pause();
+    }
+  };
+
   // On Mount:
   onMount(() => {
     race = new Race(seed, canvas);
@@ -34,7 +50,11 @@
 <canvas bind:this={canvas} width="900" height="640"></canvas>
 
 <div>
-  <button on:click={() => race.start()}>Start</button>
+  <button on:click={togglePlayState}>{playPauseMsg}</button>
+</div>
+<div>
+  Volume:
+  <input type="range" min={0} max={1} step={0.05} bind:value={volume}>
 </div>
 
 <style>

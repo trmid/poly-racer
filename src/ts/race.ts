@@ -2,9 +2,9 @@
 import raceCarBodySTL from "../../assets/racecar_body.stl.json";
 import raceCarBackWheelsSTL from "../../assets/racecar_back_wheels.stl.json";
 import raceCarFrontWheelSTL from "../../assets/racecar_front_wheel.stl.json";
-import { AMSynth, FMSynth, Loop, now, PolySynth, Synth, Transport } from "tone";
-import { mulberry32, parseSeed } from "./random";
+import { now, PolySynth, Synth, Transport, Volume } from "tone";
 import { buildTrackMesh } from "./track";
+import { EngineSound } from "./engine";
 
 export class Race {
 
@@ -16,7 +16,12 @@ export class Race {
 
   // Game state:
   private playing = false;
+  private paused = true;
   private done = false;
+  private unpauseTimeouts: NodeJS.Timeout[] = [];
+  
+  // Sound Settings:
+  private volumeNode = new Volume(-10);
 
   // Scene:
   private scene: Scene;
@@ -27,15 +32,7 @@ export class Race {
   static defaultCameraOrientation = Quaternion.fromVector(new Vector(5, 0, -1));
 
   // Engine Noise:
-  private engineSynth1: FMSynth | undefined;
-  private engineSynth2: AMSynth | undefined;
-  private engineSynth3: AMSynth | undefined;
-  private engineFrequency1 = 100;
-  private engineFrequency2 = 80;
-  private engineFrequency3 = 100;
-  private engineLoop1: Loop | undefined;
-  private engineLoop2: Loop | undefined;
-  private engineLoop3: Loop | undefined;
+  private engineSound = new EngineSound(this.volumeNode);
 
   // Countdown Noise:
   private countdownSynth: PolySynth | undefined;
@@ -124,19 +121,19 @@ export class Race {
 
     // Add dirt:
     {
-      const count = 100;
-      for(let i = 0; i < count; i++) {
-        const dirtMesh = Mesh.plane().scale(new Vector(1 + Math.random() * 10, 1 + Math.random() * 10, 1));
-        const dirt = new MeshUrbject({
-          position: new Vector(Math.random() * 300 - 150, Math.random() * 300 - 150),
-          orientation: Quaternion.fromAxisRotation(Vector.Z_AXIS, Math.random()*Math.PI),
-          group: -5,
-          state: Urbject.STATIC,
-          mesh: dirtMesh,
-          material: new Material({ fill: new Color(40) })
-        });
-        scene.add(dirt);
-      }
+      // const count = 100;
+      // for(let i = 0; i < count; i++) {
+      //   const dirtMesh = Mesh.plane().scale(new Vector(1 + Math.random() * 10, 1 + Math.random() * 10, 1));
+      //   const dirt = new MeshUrbject({
+      //     position: new Vector(Math.random() * 300 - 150, Math.random() * 300 - 150),
+      //     orientation: Quaternion.fromAxisRotation(Vector.Z_AXIS, Math.random()*Math.PI),
+      //     group: -5,
+      //     state: Urbject.STATIC,
+      //     mesh: dirtMesh,
+      //     material: new Material({ fill: new Color(40) })
+      //   });
+      //   scene.add(dirt);
+      // }
     }
 
     // Add trees:
@@ -232,7 +229,7 @@ export class Race {
       backgroundColor: new Color(50),
       showPerformance: true
     });
-    this.renderer.start(scene, camera);
+    this.renderer.render(scene, camera);
 
     // Add window event listeners:
     this.eventListeners.push({
@@ -292,13 +289,13 @@ export class Race {
       event: "focus",
       function: (e: any) => {
         this.timer.startTimer();
-        this.renderer.start(this.scene, this.camera);
+        this.start();
       }
     },
     {
       event: "blur",
       function: (e: any) => {
-        this.renderer.stop();
+        this.pause();
       }
     });
     for(const listener of this.eventListeners) {
@@ -307,58 +304,83 @@ export class Race {
 
   }
 
+  public setVolume(volume: number) {
+    volume = Num.constrain(volume, 0, 1);
+    if(volume == 0) {
+      this.volumeNode.mute = true;
+    } else {
+      this.volumeNode.volume.value = (1 - volume) * -32;
+    }
+  }
+
   public start() {
 
-    // Run pause to prevent double starts:
-    this.pause();
+    if(this.paused) {
 
-    // Create engine sounds:
-    if(!this.engineSynth1) this.engineSynth1 = new FMSynth().toDestination();
-    this.engineSynth1.volume.value = -8;
-    if(!this.engineSynth2) this.engineSynth2 = new AMSynth().toDestination();
-    if(!this.engineSynth3) this.engineSynth3 = new AMSynth().toDestination();
-    this.engineLoop1 = new Loop(time => {
-      this.engineSynth1?.triggerAttackRelease(this.engineFrequency1, "32n", time);
-    }, "8n").start(0);
-    this.engineLoop2 = new Loop(time => {
-      this.engineSynth2?.triggerAttackRelease(this.engineFrequency2, "12n", time);
-    }, "8n").start("0n");
-    this.engineLoop3 = new Loop(time => {
-      this.engineSynth3?.triggerAttackRelease(this.engineFrequency3, "12n", time);
-    }, "6n").start("6n");
+      // Unpause game:
+      this.paused = false;
+      this.canvas.focus();
 
-    // Create starting sound:
-    if(!this.countdownSynth) {
-      this.countdownSynth = new PolySynth(Synth).toDestination();
+      // Start rendering:
+      this.renderer.start(this.scene, this.camera);
+
+      // Connect volume node:
+      this.volumeNode.toDestination();
+
+      // Create starting sound:
+      if(!this.countdownSynth) {
+        this.countdownSynth = new PolySynth(Synth).connect(this.volumeNode);
+        this.countdownSynth.unsync();
+        this.countdownSynth.volume.value = -8;
+      }
+      const toneNow = now();
+      this.countdownSynth.triggerAttackRelease(["C3","C4","C5"], 0.25, toneNow);
+      this.countdownSynth.triggerAttackRelease(["C3","C4","C5"], 0.25, toneNow + 1);
+      this.countdownSynth.triggerAttackRelease(["C3","C4","C5"], 0.25, toneNow + 2);
+      this.countdownSynth.triggerAttackRelease(["G3","G4","G5"], 0.25, toneNow + 3);
+
+      // Start engine sound:
+      this.engineSound.start();
+
+      // Set game state:
+      this.unpauseTimeouts = [
+        setTimeout(() => {
+          this.playing = true;
+        }, 3000)
+      ];
+
     }
-    const toneNow = now();
-    this.countdownSynth.triggerAttackRelease(["C3","C4","C5"], "4n", toneNow);
-    this.countdownSynth.triggerAttackRelease(["C3","C4","C5"], "4n", toneNow + 1);
-    this.countdownSynth.triggerAttackRelease(["C3","C4","C5"], "4n", toneNow + 2);
-    this.countdownSynth.triggerAttackRelease(["G3","G4","G5"], "4n", toneNow + 3);
-
-    // Play sounds:
-    Transport.start();
-    Transport.bpm.setValueAtTime(300 + 200 * this.speed / this.maxSpeed, toneNow);
-
-    // Set game state:
-    setTimeout(() => {
-      this.playing = true;
-    }, 3000);
 
   }
 
+  public isPaused() {
+    return this.paused;
+  }
+
   public pause() {
+    if(!this.paused) {
 
-    // Pause game:
-    this.playing = false;
+      // Clear unpause timeouts:
+      for(const timeout of this.unpauseTimeouts) {
+        clearTimeout(timeout);
+      }
 
-    // Stop engine sounds:
-    Transport.stop();
-    this.engineLoop1?.stop();
-    this.engineLoop2?.stop();
-    this.engineLoop3?.stop();
+      // Pause game:
+      this.playing = false;
+      this.paused = true;
+      this.renderer.stop();
+      
+      // Pause engine sounds:
+      this.engineSound.stop();
 
+      // Pause countdown sound:
+      this.countdownSynth?.disconnect();
+      this.countdownSynth = undefined;
+
+      // Disconnection volume node:
+      this.volumeNode.disconnect();
+
+    }
   }
 
   /**
@@ -405,15 +427,8 @@ export class Race {
       this.frontLeftWheel.orientation.rotateY(t * Math.PI * 2 * this.speed / Race.frontWheelCircumference);
       this.frontRightWheel.orientation.rotateY(t * Math.PI * 2 * this.speed / Race.frontWheelCircumference);
 
-      // Play engine noise:
-      try {
-        this.engineFrequency1 = Math.floor(100 + 40 * this.speed / this.maxSpeed);
-        this.engineFrequency2 = Math.floor(80 + 50 * this.speed / this.maxSpeed);
-        this.engineFrequency3 = Math.floor(100 + 100 * this.speed / this.maxSpeed);
-        Transport.bpm.setValueAtTime(300 + 200 * this.speed / this.maxSpeed, now());
-      } catch(err) {
-        console.error(err);
-      }
+      // Update engine noise:
+      this.engineSound.update(this.speed / this.maxSpeed);
 
       // Handle turning:
       let turnDirection = (this.left ? 1 : 0) + (this.right ? -1 : 0);
@@ -450,13 +465,21 @@ export class Race {
   }
 
   /**
-   * Destroys all event listeners and stops the render.
+   * Destroys all event listeners and sounds and stops the render.
    * NOTE: Does NOT destroy render workers or stat boxes. Reload the page for this.
    */
   public destroy() {
+
+    // Remove listeners:
     for(const listener of this.eventListeners) {
       window.removeEventListener(listener.event, listener.function);
     }
+
+    // Destroy engine sound:
+    this.engineSound.dispose();
+
+    // Destroy countdown sound:
+    this.countdownSynth?.dispose();
   }
 
 }
