@@ -1,13 +1,15 @@
 // Mesh Imports:
 import raceCarBodySTL from "../../assets/racecar_body.stl.json";
-import raceCarBackWheelsSTL from "../../assets/racecar_back_wheels.stl.json";
-import raceCarFrontWheelSTL from "../../assets/racecar_front_wheel.stl.json";
 
 // Imports:
 import type { Volume } from "tone";
 import { EngineSound } from "./engine";
+import type { Track } from "./track";
 
 export class Car {
+
+  // Car state:
+  private onTrack = true;
 
   // Engine Noise:
   public readonly engineSound: EngineSound;
@@ -17,16 +19,22 @@ export class Car {
   static defaultCameraPosition = new Vector(-5, 0, 2);
   static defaultCameraOrientation = Quaternion.fromVector(new Vector(5, 0, -1));
 
+  // Materials:
+  static wheelMaterial = new Material({ fill: new Color(30) });
+  static offTrackWheelMaterial = new Material({ fill: new Color(200, 200, 0, 1) });
+
   // Urbjects:
   readonly body: MeshUrbject;
   private frontLeftAxel: Urbject;
   private frontRightAxel: Urbject;
   private frontLeftWheel: MeshUrbject;
   private frontRightWheel: MeshUrbject;
-  private backWheels: MeshUrbject;
+  private backLeftWheel: MeshUrbject;
+  private backRightWheel: MeshUrbject
+  static wheelSegments = 16;
 
   // Car Physics:
-  private direction = new Vector(1, 0, 0);
+  public direction = new Vector(1, 0, 0);
   private speed = 0; // m/s
   static maxSpeed = 103.47 // m/s
   private acceleration = new Vector(); // m/(s*s)
@@ -38,7 +46,30 @@ export class Car {
   private turnSensitivity = 0.5; // radians / sec
   static backWheelCircumference = 2.08; // m
   static frontWheelCircumference = 1.60; // m
-  static frontWheelXOffset = 1.7235; //m
+  static frontWheelXOffset = 1.7235; // m
+  static noseXOffset = 2.732; // m
+  static wheelPositions = {
+    frontLeft: {
+      position: new Vector(1.723, 0.689, 0.2178),
+      radius: 0.470214 / 2,
+      width: 0.298878
+    },
+    frontRight: {
+      position: new Vector(1.723, -0.689, 0.2178),
+      radius: 0.470214 / 2,
+      width: 0.298878
+    },
+    backLeft: {
+      position: new Vector(-0.9126, 0.7018, 0.2929),
+      radius: 0.633083 / 2,
+      width: 0.356393
+    },
+    backRight: {
+      position: new Vector(-0.9126, -0.7018, 0.2929),
+      radius: 0.633083 / 2,
+      width: 0.356393
+    }
+  };
 
   // Key states:
   public up = false;
@@ -69,47 +100,61 @@ export class Car {
     });
     this.body.addChild(this.camera);
 
-    // Create wheel material:
-    const wheelMat = new Material({ fill: new Color(30) });
+    // Create back wheel mesh:
+    const backWheelMesh = Mesh.cylinder({
+      resolution: Car.wheelSegments,
+      outerRadius: Car.wheelPositions.backLeft.radius,
+      height: Car.wheelPositions.backLeft.width
+    }).rotateX(Math.PI / 2);
 
-    // Create Car Back Wheels:
-    const backWheelTransform = new Vector(-0.91263, 0, 0.29288);
-    this.backWheels = new MeshUrbject({
-      position: backWheelTransform,
-      mesh: Mesh.generateFromArrayData(raceCarBackWheelsSTL).rotateZ(Math.PI/2).translate(Vector.neg(backWheelTransform)),
-      material: wheelMat
+    // Create back left wheel:
+    this.backLeftWheel = new MeshUrbject({
+      mesh: backWheelMesh,
+      material: Car.wheelMaterial,
+      position: Car.wheelPositions.backLeft.position
     });
-    this.body.addChild(this.backWheels);
+    this.body.addChild(this.backLeftWheel);
+
+    // Create back right wheel:
+    this.backRightWheel = new MeshUrbject({
+      mesh: backWheelMesh,
+      material: Car.wheelMaterial,
+      position: Car.wheelPositions.backRight.position
+    });
+    this.body.addChild(this.backRightWheel);
+
+    // Create front wheel mesh:
+    const frontWheelMesh = Mesh.cylinder({
+      resolution: Car.wheelSegments,
+      outerRadius: Car.wheelPositions.frontLeft.radius,
+      height: Car.wheelPositions.frontLeft.width
+    }).rotateX(Math.PI / 2);
 
     // Create Car Front Left Wheel:
-    const frontLeftWheelTransform = new Vector(Car.frontWheelXOffset, 0.56901, 0.21777);
-    const frontLeftWheelMesh = Mesh.generateFromArrayData(raceCarFrontWheelSTL).rotateZ(Math.PI/2).translate(Vector.neg(frontLeftWheelTransform));
     this.frontLeftAxel = new Urbject({
-      position: frontLeftWheelTransform,
+      position: Car.wheelPositions.frontLeft.position,
     });
     this.frontLeftWheel = new MeshUrbject({
-      mesh: frontLeftWheelMesh,
-      material: wheelMat
+      mesh: frontWheelMesh,
+      material: Car.wheelMaterial
     });
     this.frontLeftAxel.addChild(this.frontLeftWheel);
     this.body.addChild(this.frontLeftAxel);
 
     // Create Car Front Right Wheel:
-    const frontRightWheelTransform = Vector.mult(frontLeftWheelTransform, new Vector(1, -1, 1));
-    const frontRightWheelMesh = Mesh.scale(frontLeftWheelMesh, new Vector(1,-1,1)).inverseNormals();
     this.frontRightAxel = new Urbject({
-      position: frontRightWheelTransform,
+      position: Car.wheelPositions.frontRight.position,
     });
     this.frontRightWheel = new MeshUrbject({
-      mesh: frontRightWheelMesh,
-      material: wheelMat
+      mesh: frontWheelMesh,
+      material: Car.wheelMaterial
     });
     this.frontRightAxel.addChild(this.frontRightWheel);
     this.body.addChild(this.frontRightAxel);
 
   }
 
-  public update(t: number) {
+  public update(t: number, track: Track) {
     // Handle Acceleration:
     this.acceleration = new Vector();
     if(this.up) {
@@ -143,9 +188,10 @@ export class Car {
       // limit
       this.speed = Car.maxSpeed;
     }
-    this.backWheels.orientation.rotateY(t * Math.PI * 2 * this.speed / Car.backWheelCircumference);
-    this.frontLeftWheel.orientation.rotateY(t * Math.PI * 2 * this.speed / Car.frontWheelCircumference);
-    this.frontRightWheel.orientation.rotateY(t * Math.PI * 2 * this.speed / Car.frontWheelCircumference);
+    this.backLeftWheel.orientation.rotateY(t * this.speed / Car.wheelPositions.backLeft.radius);
+    this.backRightWheel.orientation.rotateY(t * this.speed / Car.wheelPositions.backRight.radius);
+    this.frontLeftWheel.orientation.rotateY(t * this.speed / Car.wheelPositions.frontLeft.radius);
+    this.frontRightWheel.orientation.rotateY(t * this.speed / Car.wheelPositions.frontRight.radius);
 
     // Update engine noise:
     this.engineSound.update(this.speed / Car.maxSpeed);
@@ -181,6 +227,45 @@ export class Car {
     // Move camera orientation based off of heading and speed:
     this.camera.position = Vector.add(Car.defaultCameraPosition, new Vector(-1).mult(this.speed / Car.maxSpeed).rotateZ(this.turnAngle*2));
 
+    // Check if car is on track:
+    this.onTrack = false;
+
+    // Front Left:
+    if(track.onTrack(Vector.qRotate(Car.wheelPositions.frontLeft.position, this.body.orientation).add(this.body.position), Car.wheelPositions.frontLeft.radius)) {
+      this.onTrack = true;
+      this.frontLeftWheel.material = Car.wheelMaterial;
+    } else {
+      this.frontLeftWheel.material = Car.offTrackWheelMaterial;
+    }
+
+    // Front Right:
+    if(track.onTrack(Vector.qRotate(Car.wheelPositions.frontRight.position, this.body.orientation).add(this.body.position), Car.wheelPositions.frontRight.radius)) {
+      this.onTrack = true;
+      this.frontRightWheel.material = Car.wheelMaterial;
+    } else {
+      this.frontRightWheel.material = Car.offTrackWheelMaterial;
+    }
+
+    // Back Left:
+    if(track.onTrack(Vector.qRotate(Car.wheelPositions.backLeft.position, this.body.orientation).add(this.body.position), Car.wheelPositions.backLeft.radius)) {
+      this.onTrack = true;
+      this.backLeftWheel.material = Car.wheelMaterial;
+    } else {
+      this.backLeftWheel.material = Car.offTrackWheelMaterial;
+    }
+
+    // Back Right:
+    if(track.onTrack(Vector.qRotate(Car.wheelPositions.backRight.position, this.body.orientation).add(this.body.position), Car.wheelPositions.backRight.radius)) {
+      this.onTrack = true;
+      this.backRightWheel.material = Car.wheelMaterial;
+    } else {
+      this.backRightWheel.material = Car.offTrackWheelMaterial;
+    }
+
+  }
+
+  public isOnTrack() {
+    return this.onTrack;
   }
 
   public getSpeed() {

@@ -4,7 +4,7 @@
   import type { Unsubscriber } from "svelte/store";
   import { Race } from "../ts/race";
   import { isValidSeed } from "../ts/random";
-import { zeroPad } from "../ts/utils";
+  import { zeroPad } from "../ts/utils";
 
   // Params:
   export let params: { seed: string };
@@ -24,7 +24,7 @@ import { zeroPad } from "../ts/utils";
   let race: Race;
   let centerText: string = "";
   let speed: number = 0;
-  let paused = false;
+  let state = "";
   let gameTime = 0;
   let laps: number[] = [];
 
@@ -44,10 +44,11 @@ import { zeroPad } from "../ts/utils";
   onMount(() => {
     volume = parseFloat(localStorage.getItem("volume") ?? "" + volume);
     race = new Race(seed, canvas);
+    document.getElementById("canvas-container")?.append(race.minimap);
     unsubscribes.push(
       race.stores.centerText.subscribe(text => centerText = text),
       race.stores.speed.subscribe(s => speed = s),
-      race.stores.paused.subscribe(p => paused = p),
+      race.stores.state.subscribe(s => state = s),
       race.stores.completedLaps.subscribe(l => laps = l),
       race.stores.gameTime.subscribe(t => gameTime = t),
     );
@@ -74,7 +75,7 @@ import { zeroPad } from "../ts/utils";
     <div id="game-time">{hours > 0 ? `${hours} : ` : ""}{minutes > 0 ? `${zeroPad(minutes, 2)} : ` : ""}{zeroPad(seconds, 2)}.{zeroPad(milliseconds, 3)}</div>
     <div id="speedometer">{speed.toFixed(0)} km/h</div>
     {#if centerText.length > 0}
-      <div id="overlay" class:blur={paused}>
+      <div id="overlay" class:blur={state === 'paused' || state === 'failed' || state === 'completed'}>
         <span id="center-text">{centerText}</span>
       </div>
     {/if}
@@ -90,6 +91,7 @@ import { zeroPad } from "../ts/utils";
 
   #canvas-container > canvas {
     max-width: 100%;
+    display: block;
   }
 
   #canvas-container {

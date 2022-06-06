@@ -1,15 +1,120 @@
+import { Particle, Pocket } from "@midpoint68/pocket";
 import { mulberry32, parseSeed } from "./random";
+import { inTrigonHitbox } from "./utils";
 
-export function buildTrackMesh(seed: string) {
+export class Track {
+
+  public readonly urbject: MeshUrbject;
+  public readonly mesh: Mesh;
+  public readonly startLine: { p0: Vector, p1: Vector };
+
+  // Pocket with mesh trigons:
+  private trigonPocket: Pocket<Trigon>;
+
+  constructor(public readonly seed: string, preview = false) {
+    const track = buildTrack(seed);
+    this.mesh = track.mesh;
+    this.startLine = track.startLine;
+
+    // Build Urbject:
+    this.urbject = new MeshUrbject({
+      mesh: this.mesh,
+      material: preview ? new Material({ fill: new Color("white"), lit: false }) : new Material({fill: new Color(parseInt(seed.substring(0,2), 16), 100, 50)}),
+      group: -2
+    });
+
+    // Build start line:
+    const startLineDiff = Vector.sub(this.startLine.p0, this.startLine.p1);
+    const startLine = new MeshUrbject({
+      mesh: Mesh.plane().scale(new Vector(startLineDiff.mag() * 0.9, 1, 1)),
+      material: preview ? new Material({ fill: new Color("black"), lit: false }) : new Material({ fill: new Color("white") }),
+      position: Vector.sub(this.startLine.p0, Vector.mult(startLineDiff, 0.5)),
+      orientation: Quaternion.fromVector(startLineDiff, Vector.xAxis()),
+      group: -1
+    });
+    this.urbject.addChild(startLine);
+
+    // Build pocket:
+    this.trigonPocket = new Pocket();
+    for(const trigon of this.mesh.trigons) {
+      // Add a particle centered at the trigon that contains the entire shape:
+      const center = trigon.getCenter();
+      const radius = Math.max(
+        Vector.sub(trigon.v0, center).mag(),
+        Vector.sub(trigon.v1, center).mag(),
+        Vector.sub(trigon.v2, center).mag(),
+      );
+      this.trigonPocket.put(new Particle({
+        x: center.x,
+        y: center.y,
+        radius,
+        data: trigon
+      }));
+    }
+
+    // Add trees:
+    if(!preview) {
+      const rand = mulberry32(parseSeed(seed));
+      const count = 100;
+      const radius = 1;
+      const treeMesh = new Mesh();
+      treeMesh.addTrigon(new Trigon(
+        new Vector(0, -radius, 0),
+        new Vector(0, radius, 0),
+        new Vector(0, 0, 4)
+      ));
+      for(let i = 0; i < count; i++) {
+        const material = new Material({ fill: new Color(0, 100 + rand() * 80, rand() * 20, 0.9) });
+        let position = new Vector(rand() * 800 - 400, rand() * 800 - 400, 0);
+        while(this.onTrack(position, radius)) {
+          position = new Vector(rand() * 800 - 400, rand() * 800 - 400, 0);
+        }
+        const heightScale = rand() + 1;
+        this.urbject.addChild(new MeshUrbject({
+          mesh: treeMesh,
+          material,
+          state: Urbject.Z_BILLBOARD,
+          position,
+          scale: new Vector(1, 1, heightScale)
+        }));
+      }
+    }
+  }
+
+  public addTo(parent: Scene | Urbject) {
+    if(parent instanceof Scene) {
+      parent.add(this.urbject);
+    } else {
+      parent.addChild(this.urbject);
+    }
+  }
+
+  public onTrack(position: Vector, radius: number) {
+    const possibleOverlaps = this.trigonPocket.search(radius, { x: position.x, y: position.y });
+    for(const overlap of possibleOverlaps) {
+      if(inTrigonHitbox(overlap.data, position)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public nearTrigons(position: Vector, radius: number) {
+    return [...this.trigonPocket.search(radius, { x: position.x, y: position.y })].map(x => x.data);
+  }
+
+}
+
+export function buildTrack(seed: string) {
 
   // Get seeded randomness function:
   const rand = mulberry32(parseSeed(seed));
 
   // Track constants:
-  const numPoints = 12;
-  const radius = 200;
-  const maxRadius = 380;
-  const trackWidth = 15;
+  const numPoints = 14;
+  const radius = 160;
+  const maxRadius = 360;
+  const trackWidth = 12;
 
   // Track turns:
   const points = [];
@@ -24,12 +129,18 @@ export function buildTrackMesh(seed: string) {
 
   // Construct track mesh from interpolated points:
   const mesh = new Mesh();
+  const startLine = { p0: new Vector(), p1: new Vector };
   for (let i = 0; i < numPoints; i++) {
     const prev = i == 0 ? points[numPoints - 1] : points[i - 1];
     const current = points[i];
     const next = i + 1 == numPoints ? points[0] : points[i + 1];
     const last = i + 2 >= numPoints ? points[i + 2 - numPoints] : points[i + 2];
     const segments = curve(prev.x, prev.y, current.x, current.y, next.x, next.y, last.x, last.y, trackWidth, trackWidth);
+    if(i == 0) {
+      // Set start line:
+      startLine.p0 = segments[0][0];
+      startLine.p1 = segments[0][1];
+    }
     for(const s of segments) {
       mesh.addTrigon([
         new Trigon(s[0], s[1], s[2]),
@@ -39,7 +150,10 @@ export function buildTrackMesh(seed: string) {
   }
 
   // Return mesh:
-  return mesh.inverseNormals();
+  return {
+    mesh: mesh.inverseNormals(),
+    startLine
+  };
   
 }
 
@@ -53,14 +167,6 @@ function curve(x0: number, y0: number, x1: number, y1: number, x2: number, y2: n
   const segments = new Array<Vector[]>();
   const dist = lineDist(x1, y1, x2, y2);
   if (dist > 0) {
-      // const dist01 = lineDist(x0, y0, x1, y1);
-      // const dist23 = lineDist(x2, y2, x3, y3);
-      // const dist02 = lineDist(x0, y0, x2, y2);
-      // const dist13 = lineDist(x1, y1, x3, y3);
-      // const sharp1 = dist02 < dist * 1.5, sharp2 = dist13 < dist * 1.5;
-      // const weight = 0.15 * dist;
-      // const cx0 = x1 + weight * (x1 - x0) / (dist01 || 1), cy0 = y1 + weight * (y1 - y0) / (dist01 || 1);
-      // const cx3 = x2 + weight * (x2 - x3) / (dist23 || 1), cy3 = y2 + weight * (y2 - y3) / (dist23 || 1);
       const iterations = Num.constrain(Math.ceil(dist / 5), 3, 8);
       const points: { x: number, y: number, w: number }[] = new Array(iterations + 1);
       for (let i = 0; i < iterations + 1; i++) {
@@ -70,19 +176,8 @@ function curve(x0: number, y0: number, x1: number, y1: number, x2: number, y2: n
           // Catmull-Rom
           const cat_x = 0.5 * (((-x0 + 3 * x1 - 3 * x2 + x3) * u + (2 * x0 - 5 * x1 + 4 * x2 - x3)) * u + (-x0 + x2)) * u + x1;
           const cat_y = 0.5 * (((-y0 + 3 * y1 - 3 * y2 + y3) * u + (2 * y0 - 5 * y1 + 4 * y2 - y3)) * u + (-y0 + y2)) * u + y1;
-
-          // Bezier
-          // const bx = (ui * ui * ui * x1) + (3 * ui * ui * u * cx0) + (3 * ui * u * u * cx3) + (u * u * u * x2);
-          // const by = (ui * ui * ui * y1) + (3 * ui * ui * u * cy0) + (3 * ui * u * u * cy3) + (u * u * u * y2);
-
-          // Interpolation between the two
-          // const px = ui * (sharp1 ? cat_x : bx) + u * (sharp2 ? cat_x : bx);
-          // const py = ui * (sharp1 ? cat_y : by) + u * (sharp2 ? cat_y : by);
-
-          const px = cat_x;
-          const py = cat_y;
           const pw = u * w2 + ui * w1;
-          points[i] = { x: px, y: py, w: pw };
+          points[i] = { x: cat_x, y: cat_y, w: pw };
       }
       for (let i = 0; i < iterations; i++) {
           const p0 = points[i - 1];

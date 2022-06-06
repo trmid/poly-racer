@@ -1,5 +1,5 @@
 import { now, PolySynth, Synth, Volume } from "tone";
-import { buildTrackMesh } from "./track";
+import { Track } from "./track";
 import { writable } from "svelte/store";
 import { Car } from "./car";
 
@@ -7,6 +7,9 @@ export class Race {
 
   // Renderer:
   private renderer: PerformanceRenderer;
+
+  // Minimap Canvas:
+  public readonly minimap: HTMLCanvasElement;
 
   // Timer:
   private timer = new Stats();
@@ -25,7 +28,7 @@ export class Race {
   public stores = {
     centerText: writable("Click to Start!"),
     speed: writable(0),
-    paused: writable(this.paused),
+    state: writable("ready"),
     gameTime: writable(0),
     completedLaps: writable<number[]>([]),
   };
@@ -38,6 +41,9 @@ export class Race {
 
   // Car:
   private car: Car;
+
+  // Track:
+  private track: Track;
 
   // Countdown Noise:
   private countdownSynth: PolySynth | undefined;
@@ -61,14 +67,8 @@ export class Race {
     }));
 
     // Construct track from seed:
-    const trackMesh = buildTrackMesh(seed);
-    const track = new MeshUrbject({
-      mesh: trackMesh,
-      material: new Material({fill: new Color(parseInt(seed.substring(0,2), 16), 100, 50)}),
-      group: -1,
-      scale: 0.8
-    });
-    scene.add(track);
+    this.track = new Track(seed);
+    this.track.addTo(scene);
 
     // Construct sky:
     {
@@ -95,29 +95,34 @@ export class Race {
       }));
     }
 
-    // Add trees:
-    {
-      const count = 100;
-      const treeMesh = new Mesh();
-      treeMesh.addTrigon(new Trigon(
-        new Vector(0, -1, 0),
-        new Vector(0, 1, 0),
-        new Vector(0, 0, 4)
-      ));
-      for(let i = 0; i < count; i++) {
-        scene.add(new MeshUrbject({
-          mesh: treeMesh,
-          material: new Material({ fill: new Color(0, 100 + Math.random() * 80, Math.random() * 20, 0.9) }),
-          state: Urbject.Z_BILLBOARD,
-          position: new Vector(Math.random() * 300 - 150, Math.random() * 300 - 150, 0),
-          scale: new Vector(1, 1, Math.random() + 1)
-        }));
-      }
-    }
-
     // Add car:
     this.car = new Car(this.volumeNode);
+    const startLine = this.track.startLine;
+    const startLineDiff = Vector.sub(startLine.p1, startLine.p0);
+    const startLineMid = Vector.add(startLine.p0, Vector.mult(startLineDiff, 0.5));
+    this.car.body.orientation = Quaternion.fromVector(startLineDiff, Vector.xAxis()).rotateZ(Math.PI/2);
+    this.car.direction = Vector.xAxis().qRotate(this.car.body.orientation);
+    this.car.body.position = Vector.sub(startLineMid, new Vector(Car.noseXOffset).qRotate(this.car.body.orientation));
     this.scene.add(this.car.body);
+
+    // Create minimap image:
+    {
+      this.minimap = document.createElement("canvas");
+      this.minimap.width = 150;
+      this.minimap.height = 150;
+      this.minimap.style.position = "absolute";
+      this.minimap.style.left = "5px";
+      this.minimap.style.bottom = "5px";
+      const scene = new Scene();
+      const trackPreview = new Track(seed, true);
+      scene.add(trackPreview.urbject);
+      const camera = new Camera({
+        position: new Vector(0, 0, 1800),
+        orientation: Quaternion.fromVector(Vector.zAxis().neg()),
+        fov: 40
+      });
+      new Renderer({ canvas: this.minimap, backgroundColor: new Color(0, 0) }).render(scene, camera);
+    }
 
     // Add renderer:
     this.renderer = new PerformanceRenderer({
@@ -195,6 +200,7 @@ export class Race {
       element: canvas,
       event: "click",
       function: (e: any) => {
+        if(self.done) location.reload();
         if(self.paused) self.start();
         else self.pause();
       }
@@ -220,14 +226,13 @@ export class Race {
 
       // Unpause game:
       this.paused = false;
-      this.stores.paused.set(false);
+      this.stores.state.set("playing");
       this.canvas.focus();
 
       // Set center text:
       this.stores.centerText.set("");
 
       // Start rendering:
-      this.timer.startTimer();
       this.renderer.start(this.scene, this.car.camera);
 
       // Connect volume node:
@@ -255,6 +260,7 @@ export class Race {
         setTimeout(() => this.stores.centerText.set("1"), 2000),
         setTimeout(() => {
           this.stores.centerText.set("GO!");
+          this.timer.startTimer();
           this.playing = true;
         }, 3000),
         setTimeout(() => this.stores.centerText.set(""), 4000)
@@ -265,7 +271,7 @@ export class Race {
   }
 
   public pause() {
-    if(!this.paused) {
+    if(!this.paused && !this.done) {
 
       // Set center text:
       this.stores.centerText.set("Click to Resume...");
@@ -278,7 +284,7 @@ export class Race {
       // Pause game:
       this.playing = false;
       this.paused = true;
-      this.stores.paused.set(true);
+      this.stores.state.set("paused");
       this.renderer.stop();
       
       // Pause engine sounds:
@@ -301,13 +307,22 @@ export class Race {
     const millisecondsElapsed = this.timer.readCheckpoint();
     const t = millisecondsElapsed / 1000;
 
-    if(this.playing) {
+    if(this.playing && !this.done) {
+
       // Add to game time:
       this.gameTime += millisecondsElapsed;
       this.stores.gameTime.set(this.gameTime);
       
       // Update Car movement:
-      this.car.update(t);
+      this.car.update(t, this.track);
+
+      // Check if car is on track:
+      if(!this.car.isOnTrack()) {
+        this.done = true;
+        this.stores.state.set("failed");
+        this.stores.centerText.set("Off track!\nClick to Restart...");
+        this.car.engineSound.stop();
+      }
 
       // Set speed store:
       this.stores.speed.set(this.car.getSpeed() * 60 * 60 / 1000);
