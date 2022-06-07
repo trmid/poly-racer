@@ -2,6 +2,7 @@
   import { Particle, Pocket } from "@midpoint68/pocket";
   import { onMount } from "svelte";
   import { mulberry32, parseSeed } from "../ts/random";
+import { buildTrack } from "../ts/track";
 
   export let params: { seed: string };
   let seed = params.seed;
@@ -46,14 +47,14 @@
     for(let i = 0; i < points.length; i++) {
       const p = points[i];
       const prev = (i == 0) ? points.length - 1 : i - 1;
-      for(const particle of pocket.search(trackWidth * 2, p)) {
+      for(const particle of pocket.search(trackWidth * 5, p)) {
         if(particle.data != i && particle.data != prev) return false;
       }
     }
     return true;
   };
 
-  let pointIndex = -1;
+  let pointIndex = 2;
   let t = 0;
   let angle: number;
   let direction: Vector;
@@ -68,9 +69,9 @@
       direction = new Vector(1, 0).rotateZ(angle);
       maxDistance = maxRadius + radius;
     }
-    if(pointIndex >= points.length) return;
+    if(pointIndex >= points.length) return false;
     let lastValidPosition = points[pointIndex].copy();
-    points[pointIndex].add(direction);
+    points[pointIndex].add(Vector.mult(direction, 2));
     const valid = validPoints(points);
     if(points[pointIndex].mag() > maxRadius || !valid) {
       points[pointIndex] = lastValidPosition;
@@ -96,7 +97,7 @@
       ctx.lineWidth = 1;
       ctx.strokeStyle = "lime";
       ctx.beginPath();
-      ctx.ellipse(points[i].x, points[i].y, trackWidth * 2, trackWidth * 2, 0, 0, Math.PI * 2);
+      ctx.ellipse(points[i].x, points[i].y, trackWidth * 5, trackWidth * 5, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
     for(const particle of pocket.all()) {
@@ -108,6 +109,8 @@
     }
 
     ctx.restore();
+
+    return true;
   };
 
   onMount(() => {
@@ -118,14 +121,41 @@
       points.push(new Vector(Math.cos(a) * radius, Math.sin(a) * radius));
     }
 
-    setInterval(() => {
-      if(play) next();
+    // Place 1st point in the middle of the previous and next points to create a good starting straight
+    const startLineDiff = Vector.sub(points[2], points[0]);
+    points[1] = Vector.add(points[0], Vector.mult(startLineDiff, 0.5));
+
+    const interval = setInterval(() => {
+      if(play) {
+        if(!next()) {
+
+          // Stop loop
+          clearInterval(interval);
+
+          // done, render mesh
+          const ctx = canvas.getContext('2d');
+          if(!ctx) throw new Error("Could not get ctx.");
+          ctx.fillStyle = "#88888844";
+          ctx.save();
+          ctx.translate(canvas.width / 2, canvas.height / 2);
+          const track = buildTrack(seed);
+          for(const trigon of track.mesh.trigons) {
+            ctx.beginPath();
+            ctx.moveTo(trigon.v0.x, trigon.v0.y);
+            ctx.lineTo(trigon.v1.x, trigon.v1.y);
+            ctx.lineTo(trigon.v2.x, trigon.v2.y);
+            ctx.closePath();
+            ctx.fill();
+          }
+          ctx.restore();
+        }
+      }
     }, 10);
 
   });
 
 </script>
 
-<canvas bind:this={canvas} width={600} height={600}></canvas>
+<canvas bind:this={canvas} width={900} height={900}></canvas>
 
 <button on:click={() => play = !play}>play / pause</button>
