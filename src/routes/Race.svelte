@@ -10,10 +10,6 @@
   // Params:
   export let params: { seed: string };
   const seed = params.seed;
-  if(!isValidSeed(seed)) {
-    alert("Invalid track seed.");
-    push("/");
-  }
 
   // Mount state:
   let mounted = false;
@@ -51,6 +47,14 @@
   // On Mount:
   const unsubscribes: Unsubscriber[] = [];
   onMount(() => {
+
+    // Check seed:
+    if(!isValidSeed(seed)) {
+      alert("Invalid track seed.");
+      push("/");
+    }
+
+    // Load game:
     volume = parseFloat(localStorage.getItem("volume") ?? "" + volume);
     race = new Race(seed, canvas);
     document.getElementById("canvas-container")?.append(race.minimap);
@@ -78,7 +82,7 @@
 
 </script>
 
-<div id="canvas-container">
+<div id="canvas-container" class="no-select">
   <canvas id="game-canvas" bind:this={canvas} width="900" height="640"></canvas>
   {#if race}
     <div id="game-time">{hours > 0 ? `${hours} : ` : ""}{minutes > 0 ? `${zeroPad(minutes, 2)} : ` : ""}{zeroPad(seconds, 2)}.{zeroPad(milliseconds, 3)}</div>

@@ -5,6 +5,7 @@
 	import { push } from 'svelte-spa-router';
   import { Volume } from "tone";
   import { Car } from "../ts/car";
+	import { isValidSeed } from "../ts/random";
 
 	// Initializations:
 	let seed = '';
@@ -15,11 +16,11 @@
 	const navRaceWithSeed = () => {
 		if(seed !== '') {
 			seedError = '';
-			let isValidSeed = true; // <TODO - Seed Validation>
-			if(isValidSeed) {
+			let valid = isValidSeed(seed);
+			if(valid) {
 				push(`/race/${seed}`);
 			} else {
-				seedError = 'This doesn\'t seem like a valid seed.';
+				alert('This doesn\'t seem like a valid seed.');
 			}
 		}
 	}

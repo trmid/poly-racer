@@ -181,6 +181,10 @@ export class Race {
             self.car.right = true;
             break;
           }
+          case "ESCAPE": {
+            if(!this.paused) this.pause();
+            break;
+          }
         }
       }
     },{
