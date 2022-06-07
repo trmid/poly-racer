@@ -62,12 +62,12 @@
 <!-- #################################################################################################### -->
 
 <span class="homeLogo">
-	<img src="favicon.png" alt="Poly Track">
-	<span>Poly Track</span>
+	<img src="favicon.png" alt="Poly Racer">
+	<span>Poly Racer</span>
 </span>
 
 <div class="homeInfo">
-	<span>Poly Track is a generative low-poly racing game meant to be simple, fun and competitive.</span>
+	<span>Poly Racer is a generative low-poly racing game meant to be simple, fun and competitive.</span>
 	<span>Create a randomly generated racing track and challenge your friends to beat your best times.</span>
 </div>
 
