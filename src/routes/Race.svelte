@@ -1,10 +1,11 @@
 <script type="ts">
   import { onDestroy, onMount } from "svelte";
-  import { push } from "svelte-spa-router";
+  import { push, replace } from "svelte-spa-router";
   import type { Unsubscriber } from "svelte/store";
   import { Race } from "../ts/race";
-  import { isValidSeed } from "../ts/random";
+  import { generate32bitSeed, isValidSeed } from "../ts/random";
   import { zeroPad } from "../ts/utils";
+  import TrackPreview from "../components/TrackPreview.svelte";
 
   // Params:
   export let params: { seed: string };
@@ -27,6 +28,14 @@
   let state = "";
   let gameTime = 0;
   let laps: number[] = [];
+
+  // Random Tracks:
+  let numRandomTracks = 9;
+  let randomTrackArray: string[] = [];
+  const generateRandomTracks = () => {
+    randomTrackArray = Array(numRandomTracks).fill("").map(() => generate32bitSeed());
+  };
+  generateRandomTracks();
 
   // Clock:
   $: hours = Math.floor(gameTime / (60 * 60 * 1000));
@@ -70,7 +79,7 @@
 </script>
 
 <div id="canvas-container">
-  <canvas bind:this={canvas} width="900" height="640"></canvas>
+  <canvas id="game-canvas" bind:this={canvas} width="900" height="640"></canvas>
   {#if race}
     <div id="game-time">{hours > 0 ? `${hours} : ` : ""}{minutes > 0 ? `${zeroPad(minutes, 2)} : ` : ""}{zeroPad(seconds, 2)}.{zeroPad(milliseconds, 3)}</div>
     <div id="speedometer">{speed.toFixed(0)} km/h</div>
@@ -87,11 +96,28 @@
   <input type="range" min={0} max={1} step={0.05} bind:value={volume}>
 </div>
 
+<h3>Other Random Tracks:</h3>
+<div id="random-tracks">
+  {#each randomTrackArray as seed}
+    <div on:click={() => replace(`/race/${seed}`).then(() => location.reload())}>
+      <TrackPreview {seed}/>
+    </div>
+  {/each}
+</div>
+<br>
+<button on:click={() => generateRandomTracks()}>More Tracks</button>
+
 <style>
 
-  #canvas-container > canvas {
+  #canvas-container > #game-canvas {
     max-width: 100%;
     display: block;
+  }
+
+  :global(#canvas-container > #minimap) {
+    position: absolute;
+    left: 5px;
+    bottom: 5px;
   }
 
   #canvas-container {
@@ -114,7 +140,6 @@
   }
 
   #overlay.blur {
-    /* backdrop-filter: blur(5px); */
     background-color: #0002;
   }
 
@@ -145,4 +170,22 @@
     border-radius: 10px;
   }
 
+  #random-tracks {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+
+  #random-tracks > div {
+    background-color: #0004;
+    border-radius: 10px;
+    display: flex;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  #random-tracks > div:hover {
+    transform: scale(1.02);
+    background-color: #000;
+  }
 </style>

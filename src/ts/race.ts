@@ -10,6 +10,10 @@ export class Race {
 
   // Minimap Canvas:
   public readonly minimap: HTMLCanvasElement;
+  private minimapStatic: HTMLCanvasElement;
+  private minimapCarCanvas: HTMLCanvasElement;
+  private minimapCarRenderer: Renderer | undefined;
+  private minimapCamera: Camera;
 
   // Timer:
   private timer = new Stats();
@@ -105,23 +109,40 @@ export class Race {
     this.car.body.position = Vector.sub(startLineMid, new Vector(Car.noseXOffset).qRotate(this.car.body.orientation));
     this.scene.add(this.car.body);
 
-    // Create minimap image:
+    // Create minimap canvases:
     {
+      // Public Minimap canvas:
       this.minimap = document.createElement("canvas");
       this.minimap.width = 150;
       this.minimap.height = 150;
-      this.minimap.style.position = "absolute";
-      this.minimap.style.left = "5px";
-      this.minimap.style.bottom = "5px";
-      const scene = new Scene();
-      const trackPreview = new Track(seed, true);
-      scene.add(trackPreview.urbject);
-      const camera = new Camera({
+      this.minimap.id = "minimap";
+
+      // Static canvas:
+      this.minimapStatic = document.createElement("canvas");
+      this.minimapStatic.width = this.minimap.width;
+      this.minimapStatic.height = this.minimap.height;
+
+      // Car canvas:
+      this.minimapCarCanvas = document.createElement("canvas");
+      this.minimapCarCanvas.width = this.minimap.width;
+      this.minimapCarCanvas.height = this.minimap.height;
+
+      // Create minimap camera:
+      this.minimapCamera = new Camera({
         position: new Vector(0, 0, 1800),
         orientation: Quaternion.fromVector(Vector.zAxis().neg()),
         fov: 40
       });
-      new Renderer({ canvas: this.minimap, backgroundColor: new Color(0, 0) }).render(scene, camera);
+
+      // Render Static Image:
+      const scene = new Scene();
+      const trackPreview = new Track(seed, true);
+      scene.add(trackPreview.urbject);
+      const renderer = new Renderer({ canvas: this.minimapStatic, backgroundColor: new Color(0, 0), suspendOnBlur: false })
+      renderer.render(scene, this.minimapCamera);
+
+      // Initialize minimap display:
+      this.updateMinimap();
     }
 
     // Add renderer:
@@ -138,6 +159,7 @@ export class Race {
       element: window,
       event: "keydown",
       function: (e: any) => {
+        if(this.playing) e.preventDefault();
         switch(e.key.toUpperCase()) {
           case "W":
           case "ARROWUP": {
@@ -165,6 +187,7 @@ export class Race {
       element: window,
       event: "keyup",
       function: (e: any) => {
+        if(this.playing) e.preventDefault();
         switch(e.key.toUpperCase()) {
           case "W":
           case "ARROWUP": {
@@ -208,7 +231,6 @@ export class Race {
     for(const listener of this.eventListeners) {
       listener.element.addEventListener(listener.event, listener.function);
     }
-
   }
 
   public setVolume(volume: number) {
@@ -316,6 +338,9 @@ export class Race {
       // Update Car movement:
       this.car.update(t, this.track);
 
+      // Update minimap:
+      this.updateMinimap();
+
       // Check if car is on track:
       if(!this.car.isOnTrack()) {
         this.done = true;
@@ -327,6 +352,39 @@ export class Race {
       // Set speed store:
       this.stores.speed.set(this.car.getSpeed() * 60 * 60 / 1000);
     }
+  }
+
+  /**
+   * Updates the minimap canvas display
+   */
+  private updateMinimap() {
+    const ctx = this.minimap.getContext('2d');
+    ctx?.clearRect(0, 0, this.minimap.width, this.minimap.height);
+    ctx?.drawImage(this.minimapStatic, 0, 0);
+    const scene = new Scene();
+    const carMesh = new Mesh();
+    carMesh.addTrigon(new Trigon(
+      new Vector(Car.noseXOffset, 0, 0),
+      new Vector(Car.wheelPositions.backLeft.position.x, Car.wheelPositions.backLeft.position.y, 0),
+      new Vector(Car.wheelPositions.backRight.position.x, Car.wheelPositions.backRight.position.y, 0)
+    ));
+    const carMat = this.car.body.material.copy();
+    carMat.lit = false;
+    const car = new MeshUrbject({
+      mesh: carMesh.scale(8),
+      position: this.car.body.position,
+      orientation: this.car.body.orientation,
+      material: carMat,
+      group: 1
+    });
+    scene.add(car);
+    if(!this.minimapCarRenderer) this.minimapCarRenderer = new Renderer({
+      canvas: this.minimapCarCanvas,
+      backgroundColor: new Color(0, 0),
+      suspendOnBlur: false
+    });
+    this.minimapCarRenderer.render(scene, this.minimapCamera);
+    ctx?.drawImage(this.minimapCarCanvas, 0, 0);
   }
 
   /**

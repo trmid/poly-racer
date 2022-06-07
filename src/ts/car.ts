@@ -21,7 +21,7 @@ export class Car {
 
   // Materials:
   static wheelMaterial = new Material({ fill: new Color(30) });
-  static offTrackWheelMaterial = new Material({ fill: new Color(200, 200, 0, 1) });
+  static offTrackWheelMaterial = new Material({ fill: new Color(255, 200, 0, 1) });
 
   // Urbjects:
   readonly body: MeshUrbject;

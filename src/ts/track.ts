@@ -19,7 +19,7 @@ export class Track {
     // Build Urbject:
     this.urbject = new MeshUrbject({
       mesh: this.mesh,
-      material: preview ? new Material({ fill: new Color("white"), lit: false }) : new Material({fill: new Color(parseInt(seed.substring(0,2), 16), 100, 50)}),
+      material: preview ? new Material({ fill: new Color("white"), lit: false }) : new Material({fill: new Color(parseInt(seed.substring(0,2), 16), 100, 70)}),
       group: -2
     });
 
@@ -56,12 +56,12 @@ export class Track {
     if(!preview) {
       const rand = mulberry32(parseSeed(seed));
       const count = 100;
-      const radius = 1;
+      const radius = 1.5;
       const treeMesh = new Mesh();
       treeMesh.addTrigon(new Trigon(
         new Vector(0, -radius, 0),
         new Vector(0, radius, 0),
-        new Vector(0, 0, 4)
+        new Vector(0, 0, 6)
       ));
       for(let i = 0; i < count; i++) {
         const material = new Material({ fill: new Color(0, 100 + rand() * 80, rand() * 20, 0.9) });
@@ -111,23 +111,71 @@ export function buildTrack(seed: string) {
   const rand = mulberry32(parseSeed(seed));
 
   // Track constants:
-  const numPoints = 14;
-  const radius = 160;
+  const numPoints = 12;
+  const radius = 180;
   const maxRadius = 360;
   const trackWidth = 12;
 
-  // Track turns:
+  // Track points:
   const points = [];
   for (let i = 0; i < numPoints; i++) {
     let a = i * Math.PI * 2 / numPoints;
-    let rx = radius + rand() * (maxRadius - radius);
-    let ry = radius + rand() * (maxRadius - radius);
-    let x = Math.cos(a) * rx;
-    let y = Math.sin(a) * ry;
-    points.push(new Vector(x, y));
+    points.push(new Vector(Math.cos(a) * radius, Math.sin(a) * radius));
   }
 
-  // Construct track mesh from interpolated points:
+  // Place 1st point in the middle of the previous and next points to create a good starting straight
+  const startLineDiff = Vector.sub(points[2], points[0]);
+  points[1] = Vector.add(points[0], Vector.mult(startLineDiff, 0.5));
+
+  // Function to check if track might intersect itself:
+  const validPoints = (points: Vector[]) => {
+    const pocket = new Pocket<number>();
+    for(let i = 0; i < points.length; i++) {
+      const prev = (i == 0) ? points[points.length - 1] : points[i - 1];
+      const p0 = points[i];
+      const p1 = (i == points.length - 1) ? points[0] : points[i + 1];
+      const prevDiff = Vector.sub(prev, p0);
+      const diff = Vector.sub(p1, p0);
+      if(prevDiff.angleBetween(diff) < Math.PI / 4) return false;
+      const diffNorm = Vector.normalize(diff);
+      const dist = diff.mag();
+      const hitRadius = trackWidth / 2;
+      for(let d = 0; d < dist; d += hitRadius * 2) {
+        const pos = Vector.add(p0, Vector.mult(diffNorm, d));
+        pocket.put(new Particle({
+          x: pos.x,
+          y: pos.y,
+          radius: hitRadius,
+          data: i
+        }));
+      }
+    }
+    for(let i = 0; i < points.length; i++) {
+      const p = points[i];
+      const prev = (i == 0) ? points.length - 1 : i - 1;
+      for(const particle of pocket.search(trackWidth * 5, p)) {
+        if(particle.data != i && particle.data != prev) return false;
+      }
+    }
+    return true;
+  };
+
+  // Iterate through points (skip first 3 to maintain starting straight), try to move them in a random direction until they intersect the track:
+  for(let i = 3; i < points.length; i++) {
+    const angle = rand() * Math.PI * 2;
+    const direction = new Vector(1, 0).rotateZ(angle);
+    const maxDistance = maxRadius + radius;
+    for(let t = 0; t < maxDistance; t++) {
+      let lastValidPosition = points[i].copy();
+      points[i].add(Vector.mult(direction, 2));
+      if(points[i].mag() > maxRadius || !validPoints(points)) {
+        points[i] = lastValidPosition;
+        break;
+      }
+    }
+  }
+
+  // construct track mesh from interpolated points:
   const mesh = new Mesh();
   const startLine = { p0: new Vector(), p1: new Vector };
   for (let i = 0; i < numPoints; i++) {
@@ -136,22 +184,22 @@ export function buildTrack(seed: string) {
     const next = i + 1 == numPoints ? points[0] : points[i + 1];
     const last = i + 2 >= numPoints ? points[i + 2 - numPoints] : points[i + 2];
     const segments = curve(prev.x, prev.y, current.x, current.y, next.x, next.y, last.x, last.y, trackWidth, trackWidth);
-    if(i == 0) {
+    if(i == 1) {
       // Set start line:
       startLine.p0 = segments[0][0];
       startLine.p1 = segments[0][1];
     }
     for(const s of segments) {
       mesh.addTrigon([
-        new Trigon(s[0], s[1], s[2]),
-        new Trigon(s[0], s[2], s[3])
-      ]);
+        new Trigon(s[0], s[2], s[1]),
+        new Trigon(s[0], s[3], s[2])
+      ].filter(t => t.getNormal().z > 0));
     }
   }
 
-  // Return mesh:
+  // Return mesh and start line:
   return {
-    mesh: mesh.inverseNormals(),
+    mesh: mesh,
     startLine
   };
   
@@ -176,6 +224,7 @@ function curve(x0: number, y0: number, x1: number, y1: number, x2: number, y2: n
           // Catmull-Rom
           const cat_x = 0.5 * (((-x0 + 3 * x1 - 3 * x2 + x3) * u + (2 * x0 - 5 * x1 + 4 * x2 - x3)) * u + (-x0 + x2)) * u + x1;
           const cat_y = 0.5 * (((-y0 + 3 * y1 - 3 * y2 + y3) * u + (2 * y0 - 5 * y1 + 4 * y2 - y3)) * u + (-y0 + y2)) * u + y1;
+
           const pw = u * w2 + ui * w1;
           points[i] = { x: cat_x, y: cat_y, w: pw };
       }
@@ -201,28 +250,6 @@ function curve(x0: number, y0: number, x1: number, y1: number, x2: number, y2: n
           let s1 = new Vector(p1.x + n0_norm_x, p1.y + n0_norm_y);
           let s2 = new Vector(p2.x + n2_norm_x, p2.y + n2_norm_y);
           let s3 = new Vector(p2.x - n2_norm_x, p2.y - n2_norm_y);
-          const h1 = lineDist(s0.x, s0.y, s2.x, s2.y);
-          const h2 = lineDist(s1.x, s1.y, s3.x, s3.y);
-          const e1 = lineDist(s1.x, s1.y, s2.x, s2.y);
-          const e2 = lineDist(s0.x, s0.y, s3.x, s3.y);
-          const e3 = lineDist(s0.x, s0.y, s1.x, s1.y);
-          const e4 = lineDist(s2.x, s2.y, s3.x, s3.y);
-          if (e1 + e2 > h1 + h2) { // hypotenuses added will always be greater than edges added
-              // Swap points to prevent line crossings
-              const temp_x = s2.x, temp_y = s2.y;
-              s2.x = s3.x;
-              s2.y = s3.y;
-              s3.x = temp_x;
-              s3.y = temp_y;
-          }
-          if (e3 + e4 > h1 + h2) { // hypotenuses added will always be greater than edges added
-              // Swap points to prevent line crossings
-              const temp_x = s2.x, temp_y = s2.y;
-              s2.x = s1.x;
-              s2.y = s1.y;
-              s1.x = temp_x;
-              s1.y = temp_y;
-          }
           segments.push([s0, s1, s2, s3]);
       }
   }
