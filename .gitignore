@@ -1,4 +1,4 @@
 /node_modules/
-/public/build/bundle.js.map
+/docs/build/bundle.js.map
 /.vscode/
 .DS_Store
