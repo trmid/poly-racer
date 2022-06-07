@@ -32,9 +32,9 @@ export function inTrigonHitbox(trigon: Trigon, position: Vector) {
   // Construct rectangle from each point set and check if position is within bounds:
   for(const p of sets) {
     const baseLine = Vector.sub(p[0], p[1]);
-    const angle = Vector.angleBetween(baseLine, Vector.xAxis());
-    const c = p.map(p => Vector.rotateZ(p, -angle));
-    const cp = Vector.rotateZ(position, -angle);
+    const angle = (baseLine.y < 0 ? 1 : -1) * Vector.angleBetween(baseLine, Vector.xAxis());
+    const c = p.map(p => Vector.rotateZ(p, angle));
+    const cp = Vector.rotateZ(position, angle);
     if(!(
       cp.x >= Math.min(c[0].x, c[1].x, c[2].x) &&
       cp.x <= Math.max(c[0].x, c[1].x, c[2].x) &&
