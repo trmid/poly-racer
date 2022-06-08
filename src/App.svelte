@@ -33,10 +33,10 @@
 
   header .headerContent {
     max-width: 1024px;
-    padding: .5em;
   }
 
   header a {
+    display: inline-block;
     margin: 0 1rem;
     color: white;
     text-decoration: none;
