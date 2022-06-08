@@ -4,7 +4,7 @@
   import type { Unsubscriber } from "svelte/store";
   import { Race } from "../ts/race";
   import { generate32bitSeed, isValidSeed } from "../ts/random";
-  import { zeroPad } from "../ts/utils";
+  import { formatMsTime } from "../ts/utils";
   import TrackPreview from "../components/TrackPreview.svelte";
 
   // Params:
@@ -24,6 +24,11 @@
   let state = "";
   let gameTime = 0;
   let laps: number[] = [];
+  let lapTimes: (number | null)[];
+  $: lapTimes = laps.map((t,i) => t - ( i == 0 ? 0 : laps[i - 1]));
+  $: while(lapTimes.length < race?.totalLaps ?? 0) {
+    lapTimes.push(null);
+  }
 
   // Random Tracks:
   let numRandomTracks = 9;
@@ -34,10 +39,7 @@
   generateRandomTracks();
 
   // Clock:
-  $: hours = Math.floor(gameTime / (60 * 60 * 1000));
-  $: minutes = Math.floor(gameTime / (60 * 1000)) % 60;
-  $: seconds = Math.floor(gameTime / 1000) % 60;
-  $: milliseconds = Math.floor(gameTime) % 1000;
+  $: clock = formatMsTime(gameTime);
 
   // Volume controls:
   let volume = 0.8;
@@ -85,7 +87,12 @@
 <div id="canvas-container" class="no-select">
   <canvas id="game-canvas" bind:this={canvas} width="900" height="640"></canvas>
   {#if race}
-    <div id="game-time">{hours > 0 ? `${hours} : ` : ""}{minutes > 0 ? `${zeroPad(minutes, 2)} : ` : ""}{zeroPad(seconds, 2)}.{zeroPad(milliseconds, 3)}</div>
+    <div id="game-time"><i class="icofont-stopwatch"></i> {clock}</div>
+    <div id="lap-times">
+      {#each lapTimes as lapTime, i }
+        <div><span>{i + 1}</span>{lapTime ? formatMsTime(lapTime) : ''}</div>
+      {/each}
+    </div>
     <div id="speedometer">{speed.toFixed(0)} km/h</div>
     {#if centerText.length > 0}
       <div id="overlay" class:blur={state === 'paused' || state === 'failed' || state === 'completed'}>
@@ -116,6 +123,7 @@
   #canvas-container > #game-canvas {
     max-width: 100%;
     display: block;
+    border-radius: 10px;
   }
 
   :global(#canvas-container > #minimap) {
@@ -152,6 +160,9 @@
     font-weight: bold;
     font-style: italic;
     color: white;
+    white-space: pre-wrap;
+    text-align: center;
+    text-shadow: 1px 2px 0 #666;
   }
 
   #game-time {
@@ -163,6 +174,30 @@
     color: white;
     padding: 10px 20px;
     transform: translateX(-50%);
+  }
+
+  #lap-times {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+
+  #lap-times > div {
+    background-color: #0004;
+    color: white;
+    padding: 10px 20px 10px 5px;
+    margin: 10px;
+    border-radius: 10px;
+    min-width: 6rem;
+    text-align: left;
+  }
+
+  #lap-times > div > span {
+    background-color: #0004;
+    font-weight: bold;
+    border-radius: 5px;
+    margin-right: 10px;
+    padding: 5px 10px;
   }
 
   #speedometer {

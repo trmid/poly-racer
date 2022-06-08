@@ -2,6 +2,7 @@ import { now, PolySynth, Synth, Volume } from "tone";
 import { Track } from "./track";
 import { writable } from "svelte/store";
 import { Car } from "./car";
+import { formatMsTime, linesCross } from "./utils";
 
 export class Race {
 
@@ -25,8 +26,9 @@ export class Race {
   private unpauseTimeouts: NodeJS.Timeout[] = [];
   private gameTime = 0;
 
-  // Lap Settings:
-  static totalLaps = 3;
+  // Lap Info:
+  public readonly totalLaps = 3;
+  private checkpoints = new Set<any>();
 
   // Stores:
   public stores = {
@@ -338,9 +340,52 @@ export class Race {
       // Add to game time:
       this.gameTime += millisecondsElapsed;
       this.stores.gameTime.set(this.gameTime);
+
+      // Get current car position:
+      const lastCarPos = this.car.body.position.copy();
       
       // Update Car movement:
       this.car.update(t, this.track);
+
+      // Get new car position:
+      const newCarPos = this.car.body.position.copy();
+
+      // Get checkpoints:
+      const checkpoints = this.track.nearTrigons(newCarPos, (Car.noseXOffset - Car.wheelPositions.backLeft.position.x) / 2);
+      for(const checkpoint of checkpoints) {
+        this.checkpoints.add(checkpoint);
+      }
+
+      // Check if car has touched at least 80% of checkpoints:
+      if(this.checkpoints.size > 0.8 * this.track.totalTrigons()) {
+
+        // Check if car has cross finish line:
+        const noseOffset = new Vector(Car.noseXOffset, 0).qRotate(this.car.body.orientation);
+        if(linesCross(
+          Vector.add(lastCarPos, noseOffset),
+          Vector.add(newCarPos, noseOffset),
+          this.track.startLine.p0,
+          this.track.startLine.p1
+        )) {
+
+          // Reset checkpoints and add lap time:
+          this.checkpoints = new Set();
+          this.stores.completedLaps.update(laps => {
+
+            // Push lap time:
+            laps.push(this.gameTime);
+
+            // Check if all laps are complete:
+            if(laps.length == this.totalLaps) {
+              this.pause();
+              this.stores.centerText.set(`Race Complete!\nTime: ${formatMsTime(this.gameTime)}`);
+              this.done = true;
+            }
+
+            return laps;
+          });
+        }
+      }
 
       // Update minimap:
       this.updateMinimap();

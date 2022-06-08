@@ -103,6 +103,10 @@ export class Track {
     return [...this.trigonPocket.search(radius, { x: position.x, y: position.y })].map(x => x.data);
   }
 
+  public totalTrigons() {
+    return this.mesh.trigons.length;
+  }
+
 }
 
 export function buildTrack(seed: string) {

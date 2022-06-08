@@ -18,10 +18,17 @@
 <style>
 
   header {
+    position: sticky;
+    position: -webkit-sticky;
+    top: 0;
+    z-index: 10;
+
     display: flex;
     justify-content: center;
-    background-color: #ee3b2b;
-    border-bottom: 2px solid black;
+    background-color: #0005;
+    backdrop-filter: contrast(0.5);
+    border-bottom: 5px solid #ee3b2b88;
+    border-top: 5px solid #ee3b2b88;
   }
 
   header .headerContent {
@@ -30,9 +37,14 @@
   }
 
   header a {
-    margin: 0 1.5em;
+    margin: 0 1rem;
     color: white;
     text-decoration: none;
+    padding: 0.5rem 1rem;
+  }
+
+  header a:hover {
+    background-color: #ee3b2b88;
   }
 
   main {
