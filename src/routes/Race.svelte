@@ -123,7 +123,6 @@
   #canvas-container > #game-canvas {
     max-width: 100%;
     display: block;
-    border-radius: 10px;
   }
 
   :global(#canvas-container > #minimap) {
@@ -137,6 +136,7 @@
     position: relative;
     display: inline-block;
     overflow: hidden;
+    border-radius: 10px;
   }
 
   #overlay {
