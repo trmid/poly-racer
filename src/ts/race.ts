@@ -361,12 +361,15 @@ export class Race {
 
         // Check if car has cross finish line:
         const noseOffset = new Vector(Car.noseXOffset, 0).qRotate(this.car.body.orientation);
+        const startLineDiff = Vector.sub(this.track.startLine.p1, this.track.startLine.p0);
         if(linesCross(
           Vector.add(lastCarPos, noseOffset),
           Vector.add(newCarPos, noseOffset),
-          this.track.startLine.p0,
-          this.track.startLine.p1
+          Vector.sub(this.track.startLine.p0, Vector.mult(startLineDiff, 0.5)),
+          Vector.add(this.track.startLine.p1, Vector.mult(startLineDiff, 0.5))
         )) {
+
+          console.log(`${(100 * this.checkpoints.size / this.track.totalTrigons()).toFixed(2)}%`);
 
           // Reset checkpoints and add lap time:
           this.checkpoints = new Set();
