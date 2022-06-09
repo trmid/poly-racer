@@ -1,15 +1,16 @@
 <script type="ts">
-  import { onDestroy, onMount } from "svelte";
-  import { push, replace } from "svelte-spa-router";
   import type { Unsubscriber } from "svelte/store";
-  import { Race } from "../ts/race";
+  import { onDestroy, onMount } from "svelte";
+  import { push } from "svelte-spa-router";
+  import { history, Race, RaceState } from "../ts/race";
   import { generate32bitSeed, isValidSeed } from "../ts/random";
   import { formatMsTime } from "../ts/utils";
   import TrackPreview from "../components/TrackPreview.svelte";
+import TrackTime from "../components/TrackTime.svelte";
 
   // Params:
   export let params: { seed: string };
-  const seed = params.seed;
+  $: seed = params.seed;
 
   // Mount state:
   let mounted = false;
@@ -21,14 +22,19 @@
   let race: Race;
   let centerText: string = "";
   let speed: number = 0;
-  let state = "";
+  let state: RaceState;
   let gameTime = 0;
   let laps: number[] = [];
   let lapTimes: (number | null)[];
+  $: if(race) race.load(seed); // dynamic race load
   $: lapTimes = laps.map((t,i) => t - ( i == 0 ? 0 : laps[i - 1]));
   $: while(lapTimes.length < race?.totalLaps ?? 0) {
     lapTimes.push(null);
   }
+
+  // Track History:
+  $: trackHistory = [{ timestamp: 0, laps: [23423, 235345, 234234], seed }, { timestamp: 1, laps: [0, 1000, 2000], seed }, { timestamp: 2, laps: [23425345, 356745, 34563456], seed }];//$history.filter(x => x.seed === seed).sort((a,b) => a.timestamp - b.timestamp);
+  $: personalBest = trackHistory.length > 0 ? trackHistory.reduce((a,b) => a.laps[a.laps.length - 1] < b.laps[b.laps.length - 1] ? a : b) : undefined;
 
   // Random Tracks:
   let numRandomTracks = 9;
@@ -54,20 +60,21 @@
     if(!isValidSeed(seed)) {
       alert("Invalid track seed.");
       push("/");
-    }
+    } else {
 
-    // Load game:
-    volume = parseFloat(localStorage.getItem("volume") ?? "" + volume);
-    race = new Race(seed, canvas);
-    document.getElementById("canvas-container")?.append(race.minimap);
-    unsubscribes.push(
-      race.stores.centerText.subscribe(text => centerText = text),
-      race.stores.speed.subscribe(s => speed = s),
-      race.stores.state.subscribe(s => state = s),
-      race.stores.completedLaps.subscribe(l => laps = l),
-      race.stores.gameTime.subscribe(t => gameTime = t),
-    );
-    mounted = true;
+      // Load game:
+      volume = parseFloat(localStorage.getItem("volume") ?? "" + volume);
+      race = new Race(canvas);
+      document.getElementById("canvas-container")?.append(race.minimap);
+      unsubscribes.push(
+        race.stores.centerText.subscribe(text => centerText = text),
+        race.stores.speed.subscribe(s => speed = s),
+        race.stores.state.subscribe(s => state = s),
+        race.stores.completedLaps.subscribe(l => laps = l),
+        race.stores.gameTime.subscribe(t => gameTime = t),
+      );
+      mounted = true;
+    }
   });
 
   // On Destroy:
@@ -84,33 +91,42 @@
 
 </script>
 
-<div id="canvas-container" class="no-select">
-  <canvas id="game-canvas" bind:this={canvas} width="900" height="640"></canvas>
-  {#if race}
-    <div id="game-time"><i class="icofont-stopwatch"></i> {clock}</div>
-    <div id="lap-times">
-      {#each lapTimes as lapTime, i }
-        <div><span>{i + 1}</span>{lapTime ? formatMsTime(lapTime) : ''}</div>
+<div id="game-panel">
+  <div id="canvas-container" class="no-select">
+    <canvas id="game-canvas" bind:this={canvas} width="900" height="640"></canvas>
+    {#if race}
+      <div id="game-time"><i class="icofont-stopwatch"></i> {clock}</div>
+      <div id="lap-times">
+        {#each lapTimes as lapTime, i }
+          <div><span>{i + 1}</span>{lapTime ? formatMsTime(lapTime) : ''}</div>
+        {/each}
+      </div>
+      <div id="speedometer">{speed.toFixed(0)} km/h</div>
+      {#if centerText.length > 0}
+        <div id="overlay" class:blur={state == RaceState.READY || state == RaceState.PAUSED || state == RaceState.FAILED || state == RaceState.DONE}>
+          <span id="center-text">{centerText}</span>
+        </div>
+      {/if}
+    {/if}
+  </div>
+  {#if trackHistory.length > 0 && personalBest}
+    <div id="history">
+      <TrackTime record={personalBest} />
+      {#each trackHistory as record}
+        <TrackTime record={record} />
       {/each}
     </div>
-    <div id="speedometer">{speed.toFixed(0)} km/h</div>
-    {#if centerText.length > 0}
-      <div id="overlay" class:blur={state === 'paused' || state === 'failed' || state === 'completed'}>
-        <span id="center-text">{centerText}</span>
-      </div>
-    {/if}
   {/if}
 </div>
 
-<div>
-  Volume:
-  <input type="range" min={0} max={1} step={0.05} bind:value={volume}>
+<div id="settings">
+  Volume: <input type="range" min={0} max={1} step={0.05} bind:value={volume}>
 </div>
 
 <h3>Other Random Tracks:</h3>
 <div id="random-tracks">
   {#each randomTrackArray as seed}
-    <div on:click={() => replace(`/race/${seed}`).then(() => location.reload())}>
+    <div on:click={() => push(`/race/${seed}`)}>
       <TrackPreview {seed}/>
     </div>
   {/each}
@@ -119,6 +135,14 @@
 <button on:click={() => generateRandomTracks()}>More Tracks</button>
 
 <style>
+
+  #game-panel {
+    display: flex;
+    flex-wrap: wrap;
+    flex-direction: row;
+    justify-content: center;
+    align-items: stretch;
+  }
 
   #canvas-container > #game-canvas {
     max-width: 100%;

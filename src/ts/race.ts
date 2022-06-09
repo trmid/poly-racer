@@ -4,7 +4,27 @@ import { writable } from "svelte/store";
 import { Car } from "./car";
 import { formatMsTime, linesCross } from "./utils";
 
+export interface RaceRecord {
+  timestamp: number
+  seed: string
+  laps: number[]
+}
+
+export const history = writable<RaceRecord[]>([]);
+
+export enum RaceState {
+  READY,
+  COUNTDOWN,
+  PLAYING,
+  PAUSED,
+  DONE,
+  FAILED
+}
+
 export class Race {
+
+  // Seed:
+  private seed: string = "";
 
   // Renderer:
   private renderer: PerformanceRenderer;
@@ -17,14 +37,12 @@ export class Race {
   private minimapCamera: Camera;
 
   // Timer:
-  private timer = new Stats();
+  private timer: Stats = new Stats();
 
   // Game state:
-  private playing = false;
-  private paused = true;
-  private done = false;
+  private _state: RaceState = RaceState.READY;
+  private _gameTime: number = 0;
   private unpauseTimeouts: NodeJS.Timeout[] = [];
-  private gameTime = 0;
 
   // Lap Info:
   public readonly totalLaps = 3;
@@ -34,7 +52,7 @@ export class Race {
   public stores = {
     centerText: writable("Click to Start!"),
     speed: writable(0),
-    state: writable("ready"),
+    state: writable(RaceState.READY),
     gameTime: writable(0),
     completedLaps: writable<number[]>([]),
   };
@@ -43,13 +61,13 @@ export class Race {
   private volumeNode = new Volume(-10);
 
   // Scene:
-  private scene: Scene;
+  private scene: Scene = new Scene();
 
   // Car:
-  private car: Car;
+  private car: Car = new Car(this.volumeNode);
 
   // Track:
-  private track: Track;
+  private track: Track | undefined;
 
   // Countdown Noise:
   private countdownSynth: PolySynth | undefined;
@@ -57,10 +75,147 @@ export class Race {
   // Listeners:
   private eventListeners: {element: Window | Element, event: string, function: <E extends Event>(e: E) => void}[] = [];
 
-  constructor(readonly seed: string, readonly canvas: HTMLCanvasElement) {
+  constructor(readonly canvas: HTMLCanvasElement) {
 
-    // Create reference to self:
-    const self = this;
+    // Create minimap canvases:
+    {
+      // Public Minimap canvas:
+      this.minimap = document.createElement("canvas");
+      this.minimap.width = 150;
+      this.minimap.height = 150;
+      this.minimap.id = "minimap";
+
+      // Static canvas:
+      this.minimapStatic = document.createElement("canvas");
+      this.minimapStatic.width = this.minimap.width;
+      this.minimapStatic.height = this.minimap.height;
+
+      // Car canvas:
+      this.minimapCarCanvas = document.createElement("canvas");
+      this.minimapCarCanvas.width = this.minimap.width;
+      this.minimapCarCanvas.height = this.minimap.height;
+
+      // Create minimap camera:
+      this.minimapCamera = new Camera({
+        position: new Vector(0, 0, 1800),
+        orientation: Quaternion.fromVector(Vector.zAxis().neg()),
+        fov: 40
+      });
+    }
+
+    // Make canvas focusable:
+    canvas.tabIndex = 1;
+
+    // Add renderer:
+    this.renderer = new PerformanceRenderer({
+      canvas,
+      frameCallback: () => this.draw(),
+      backgroundColor: new Color(50),
+      showPerformance: false
+    });
+
+    // Add window event listeners:
+    this.eventListeners.push({
+      element: canvas,
+      event: "keydown",
+      function: (e: any) => {
+        e.preventDefault();
+        e.stopPropagation();
+        switch(e.key.toUpperCase()) {
+          case "W":
+          case "ARROWUP": {
+            this.car.up = true;
+            break;
+          }
+          case "A":
+          case "ARROWLEFT": {
+            this.car.left = true;
+            break;
+          }
+          case "S":
+          case "ARROWDOWN": {
+            this.car.down = true;
+            break;
+          }
+          case "D":
+          case "ARROWRIGHT": {
+            this.car.right = true;
+            break;
+          }
+          case "ESCAPE": {
+            this.pause();
+            break;
+          }
+        }
+      }
+    },{
+      element: canvas,
+      event: "keyup",
+      function: (e: any) => {
+        e.preventDefault();
+        e.stopPropagation();
+        switch(e.key.toUpperCase()) {
+          case "W":
+          case "ARROWUP": {
+            this.car.up = false;
+            break;
+          }
+          case "A":
+          case "ARROWLEFT": {
+            this.car.left = false;
+            break;
+          }
+          case "S":
+          case "ARROWDOWN": {
+            this.car.down = false;
+            break;
+          }
+          case "D":
+          case "ARROWRIGHT": {
+            this.car.right = false;
+            break;
+          }
+        }
+      }
+    },
+    {
+      element: canvas,
+      event: "blur",
+      function: (e: any) => {
+        this.pause();
+      }
+    },
+    {
+      element: canvas,
+      event: "click",
+      function: (e: any) => {
+        if(this.state == RaceState.READY) this.start();
+        else if(this.state == RaceState.DONE || this.state == RaceState.FAILED) this.restart();
+        else if(this.state == RaceState.PAUSED) this.start();
+        else this.pause();
+      }
+    });
+    for(const listener of this.eventListeners) {
+      listener.element.addEventListener(listener.event, listener.function);
+    }
+
+  }
+
+  /**
+   * Setups the race with the given track seed.
+   * 
+   * @param seed String
+   */
+  public load(seed: string) {
+
+    // Init vars:
+    this.seed = seed;
+    this.state = RaceState.READY;
+    this.gameTime = 0;
+    this.timer = new Stats();
+    this.checkpoints = new Set();
+    this.stores.centerText.set("Click to Start!");
+    this.stores.completedLaps.set([]);
 
     // Create Scene:
     const scene = new Scene();
@@ -110,32 +265,9 @@ export class Race {
     this.car.direction = Vector.xAxis().qRotate(this.car.body.orientation);
     this.car.body.position = Vector.sub(startLineMid, new Vector(Car.noseXOffset).qRotate(this.car.body.orientation));
     this.scene.add(this.car.body);
-
-    // Create minimap canvases:
+    
+    // Minimap setup:
     {
-      // Public Minimap canvas:
-      this.minimap = document.createElement("canvas");
-      this.minimap.width = 150;
-      this.minimap.height = 150;
-      this.minimap.id = "minimap";
-
-      // Static canvas:
-      this.minimapStatic = document.createElement("canvas");
-      this.minimapStatic.width = this.minimap.width;
-      this.minimapStatic.height = this.minimap.height;
-
-      // Car canvas:
-      this.minimapCarCanvas = document.createElement("canvas");
-      this.minimapCarCanvas.width = this.minimap.width;
-      this.minimapCarCanvas.height = this.minimap.height;
-
-      // Create minimap camera:
-      this.minimapCamera = new Camera({
-        position: new Vector(0, 0, 1800),
-        orientation: Quaternion.fromVector(Vector.zAxis().neg()),
-        fov: 40
-      });
-
       // Render Static Image:
       const scene = new Scene();
       const trackPreview = new Track(seed, true);
@@ -147,96 +279,23 @@ export class Race {
       this.updateMinimap();
     }
 
-    // Add renderer:
-    this.renderer = new PerformanceRenderer({
-      canvas,
-      frameCallback: () => this.draw(),
-      backgroundColor: new Color(50),
-      showPerformance: false
-    });
-    this.renderer.render(scene, this.car.camera);
+    // Render first frame (use timeout to make sure Performance Render doesn't ignore the frame due to ongoing processing):
+    this.renderer.stop();
+    setTimeout(() => {
+      this.renderer.render(this.scene, this.car.camera);
+    }, 100);
 
-    // Add window event listeners:
-    this.eventListeners.push({
-      element: window,
-      event: "keydown",
-      function: (e: any) => {
-        if(this.playing) e.preventDefault();
-        switch(e.key.toUpperCase()) {
-          case "W":
-          case "ARROWUP": {
-            self.car.up = true;
-            break;
-          }
-          case "A":
-          case "ARROWLEFT": {
-            self.car.left = true;
-            break;
-          }
-          case "S":
-          case "ARROWDOWN": {
-            self.car.down = true;
-            break;
-          }
-          case "D":
-          case "ARROWRIGHT": {
-            self.car.right = true;
-            break;
-          }
-          case "ESCAPE": {
-            if(!this.paused) this.pause();
-            break;
-          }
-        }
-      }
-    },{
-      element: window,
-      event: "keyup",
-      function: (e: any) => {
-        if(this.playing) e.preventDefault();
-        switch(e.key.toUpperCase()) {
-          case "W":
-          case "ARROWUP": {
-            self.car.up = false;
-            break;
-          }
-          case "A":
-          case "ARROWLEFT": {
-            self.car.left = false;
-            break;
-          }
-          case "S":
-          case "ARROWDOWN": {
-            self.car.down = false;
-            break;
-          }
-          case "D":
-          case "ARROWRIGHT": {
-            self.car.right = false;
-            break;
-          }
-        }
-      }
-    },
-    {
-      element: window,
-      event: "blur",
-      function: (e: any) => {
-        this.pause();
-      }
-    },
-    {
-      element: canvas,
-      event: "click",
-      function: (e: any) => {
-        if(self.done) location.reload();
-        if(self.paused) self.start();
-        else self.pause();
-      }
-    });
-    for(const listener of this.eventListeners) {
-      listener.element.addEventListener(listener.event, listener.function);
-    }
+    // Return init variables:
+    return {
+      track: this.track,
+      car: this.car,
+      scene: this.scene,
+      state: this.state,
+      timer: this.timer,
+      gameTime: this.gameTime,
+      checkpoints: this.checkpoints
+    };
+
   }
 
   public setVolume(volume: number) {
@@ -248,19 +307,24 @@ export class Race {
     }
   }
 
+  public restart() {
+    this.load(this.seed);
+    this.start();
+  }
+
   public start() {
 
-    if(this.paused) {
+    if(this.state == RaceState.PAUSED || this.state == RaceState.READY) {
 
       // Unpause game:
-      this.paused = false;
-      this.stores.state.set("playing");
+      this.state = RaceState.COUNTDOWN;
       this.canvas.focus();
 
       // Set center text:
       this.stores.centerText.set("");
 
       // Start rendering:
+      this.renderer.stop();
       this.renderer.start(this.scene, this.car.camera);
 
       // Connect volume node:
@@ -281,7 +345,12 @@ export class Race {
       // Start engine sound:
       this.car.engineSound.start();
 
-      // Set game state:
+      // Clear unpause timeouts:
+      for(const timeout of this.unpauseTimeouts) {
+        clearTimeout(timeout);
+      }
+
+      // Start countdown:
       this.stores.centerText.set("3");
       this.unpauseTimeouts = [
         setTimeout(() => this.stores.centerText.set("2"), 1000),
@@ -289,7 +358,7 @@ export class Race {
         setTimeout(() => {
           this.stores.centerText.set("GO!");
           this.timer.startTimer();
-          this.playing = true;
+          this.state = RaceState.PLAYING;
         }, 3000),
         setTimeout(() => this.stores.centerText.set(""), 4000)
       ];
@@ -299,21 +368,19 @@ export class Race {
   }
 
   public pause() {
-    if(!this.paused && !this.done) {
+    if(this.state == RaceState.PLAYING || this.state == RaceState.READY || this.state == RaceState.COUNTDOWN) {
 
       // Set center text:
       this.stores.centerText.set("Click to Resume...");
+
+      // Pause game:
+      this.state = RaceState.PAUSED;
+      this.renderer.stop();
 
       // Clear unpause timeouts:
       for(const timeout of this.unpauseTimeouts) {
         clearTimeout(timeout);
       }
-
-      // Pause game:
-      this.playing = false;
-      this.paused = true;
-      this.stores.state.set("paused");
-      this.renderer.stop();
       
       // Pause engine sounds:
       this.car.engineSound.stop();
@@ -335,7 +402,10 @@ export class Race {
     const millisecondsElapsed = this.timer.readCheckpoint();
     const t = millisecondsElapsed / 1000;
 
-    if(this.playing && !this.done) {
+    if(this.state == RaceState.PLAYING) {
+
+      // Check if track is loaded:
+      if(!this.track) this.track = new Track(this.seed);
 
       // Add to game time:
       this.gameTime += millisecondsElapsed;
@@ -382,7 +452,7 @@ export class Race {
             if(laps.length == this.totalLaps) {
               this.pause();
               this.stores.centerText.set(`Race Complete!\nTime: ${formatMsTime(this.gameTime)}`);
-              this.done = true;
+              this.state = RaceState.DONE
             }
 
             return laps;
@@ -395,8 +465,7 @@ export class Race {
 
       // Check if car is on track:
       if(!this.car.isOnTrack()) {
-        this.done = true;
-        this.stores.state.set("failed");
+        this.state = RaceState.FAILED;
         this.stores.centerText.set("Off track!\nClick to Restart...");
         this.car.engineSound.stop();
       }
@@ -455,6 +524,24 @@ export class Race {
 
     // Destroy countdown sound:
     this.countdownSynth?.dispose();
+  }
+
+  public get state() {
+    return this._state;
+  }
+
+  private set state(state: RaceState) {
+    this._state = state;
+    this.stores.state.set(state);
+  }
+
+  public get gameTime() {
+    return this._gameTime;
+  }
+
+  private set gameTime(time: number) {
+    this._gameTime = time;
+    this.stores.gameTime.set(time);
   }
 
 }
