@@ -6,7 +6,8 @@
   import { generate32bitSeed, isValidSeed } from "../ts/random";
   import { formatMsTime } from "../ts/utils";
   import TrackPreview from "../components/TrackPreview.svelte";
-import TrackTime from "../components/TrackTime.svelte";
+  import TrackTimes from "../components/TrackTimes.svelte";
+  import { favourites } from "../ts/track";
 
   // Params:
   export let params: { seed: string };
@@ -33,7 +34,7 @@ import TrackTime from "../components/TrackTime.svelte";
   }
 
   // Track History:
-  $: trackHistory = [{ timestamp: 0, laps: [23423, 235345, 234234], seed }, { timestamp: 1, laps: [0, 1000, 2000], seed }, { timestamp: 2, laps: [23425345, 356745, 34563456], seed }];//$history.filter(x => x.seed === seed).sort((a,b) => a.timestamp - b.timestamp);
+  $: trackHistory = $history.filter(x => x.seed === seed).sort((a,b) => a.timestamp - b.timestamp);
   $: personalBest = trackHistory.length > 0 ? trackHistory.reduce((a,b) => a.laps[a.laps.length - 1] < b.laps[b.laps.length - 1] ? a : b) : undefined;
 
   // Random Tracks:
@@ -51,6 +52,16 @@ import TrackTime from "../components/TrackTime.svelte";
   let volume = 0.8;
   $: if(race) race.setVolume(volume);
   $: if(mounted) localStorage.setItem("volume", "" + volume);
+
+  // Toggle Favourite:
+  $: favourited = $favourites.has(seed);
+  const toggleFavorite = () => {
+    favourites.update(favourites => {
+      if(favourites.has(seed)) favourites.delete(seed);
+      else favourites.add(seed);
+      return favourites;
+    });
+  };
 
   // On Mount:
   const unsubscribes: Unsubscriber[] = [];
@@ -91,6 +102,12 @@ import TrackTime from "../components/TrackTime.svelte";
 
 </script>
 
+<div id="track-header">
+  Track Seed:
+  <span class="seed">{seed} <i title="copy" class="copy-btn icofont-ui-copy" on:click={() => { navigator.clipboard.writeText(seed); alert("Seed Copied!"); }}/></span>
+  <i title={favourited ? "Un-Favourite" : "Favourite"} class="favourite-btn icofont-favourite" class:favourited={favourited} on:click={() => toggleFavorite()}/>
+</div>
+
 <div id="game-panel">
   <div id="canvas-container" class="no-select">
     <canvas id="game-canvas" bind:this={canvas} width="900" height="640"></canvas>
@@ -109,21 +126,31 @@ import TrackTime from "../components/TrackTime.svelte";
       {/if}
     {/if}
   </div>
-  {#if trackHistory.length > 0 && personalBest}
-    <div id="history">
-      <TrackTime record={personalBest} />
-      {#each trackHistory as record}
-        <TrackTime record={record} />
-      {/each}
+  <div id="info-panel">
+    <div id="settings">
+      <table>
+        <tr>
+          <th colspan={2} style="border-bottom: 1px solid currentColor;">Settings</th>
+        </tr>
+        <tr>
+          <th>Volume</th>
+          <td><input type="range" min={0} max={1} step={0.05} bind:value={volume} /></td>
+        </tr>
+        <tr>
+          <th>Steering Sensitivity</th>
+          <td><input type="range" min={0.1} max={2} step={0.1}></td>
+        </tr>
+      </table>
     </div>
-  {/if}
+    {#if trackHistory.length > 0 && personalBest}
+      <div id="history">
+        <TrackTimes records={trackHistory} {personalBest} />
+      </div>
+    {/if}
+  </div>
 </div>
 
-<div id="settings">
-  Volume: <input type="range" min={0} max={1} step={0.05} bind:value={volume}>
-</div>
-
-<h3>Other Random Tracks:</h3>
+<h2>Other Random Tracks:</h2>
 <div id="random-tracks">
   {#each randomTrackArray as seed}
     <div on:click={() => push(`/race/${seed}`)}>
@@ -136,6 +163,43 @@ import TrackTime from "../components/TrackTime.svelte";
 
 <style>
 
+  #track-header {
+    font-size: 24px;
+    margin-bottom: 1rem;
+    font-style: italic;
+    font-weight: bold;
+  }
+
+  #track-header > .seed {
+    font-size: 16px;
+    font-weight: bold;
+    font-style: italic;
+    display: inline-block;
+    padding: 10px 20px;
+    margin-left: 5px;
+    background-color: #0004;
+    border-radius: 10px;
+  }
+
+  #track-header > .seed > .copy-btn {
+    margin-left: 0.5rem;
+    cursor: copy;
+  }
+
+  .favourite-btn {
+    color: #0004;
+    cursor: pointer;
+    margin-right: 0.5rem;
+  }
+
+  .favourite-btn:hover {
+    color: #0008
+  }
+
+  .favourite-btn.favourited {
+    color: inherit;
+  }
+
   #game-panel {
     display: flex;
     flex-wrap: wrap;
@@ -147,6 +211,10 @@ import TrackTime from "../components/TrackTime.svelte";
   #canvas-container > #game-canvas {
     max-width: 100%;
     display: block;
+  }
+
+  #canvas-container > #game-canvas:focus {
+    outline: none;
   }
 
   :global(#canvas-container > #minimap) {
@@ -230,6 +298,35 @@ import TrackTime from "../components/TrackTime.svelte";
     bottom: 10px;
     padding: 10px 20px;
     background-color: #0004;
+    border-radius: 10px;
+  }
+
+  #info-panel {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: stretch;
+  }
+
+  #settings {
+    margin: 10px;
+    background-color: #0004;
+    border-radius: 10px;
+    padding: 10px;
+    flex-grow: 1;
+    text-align: left;
+  }
+
+  #settings th,
+  #settings td {
+    padding: 5px;
+  }
+
+  #history {
+    margin: 10px;
+    background-color: #0004;
+    padding: 10px;
     border-radius: 10px;
   }
 

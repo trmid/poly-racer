@@ -1,6 +1,9 @@
 import { Particle, Pocket } from "@midpoint68/pocket";
+import { writable } from "svelte/store";
 import { mulberry32, parseSeed } from "./random";
 import { inTrigonHitbox } from "./utils";
+
+export const favourites = writable<Set<string>>(new Set());
 
 export class Track {
 

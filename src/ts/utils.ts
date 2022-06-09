@@ -91,12 +91,12 @@ export function linesCross(a0: Vector, a1: Vector, b0: Vector, b1: Vector) {
  * Formats a millisecond time as a stopwatch-style time string.
  * 
  * @param ms time in milliseconds
+ * @param full includes all fields if true
  * @returns string
  */
-export const formatMsTime = (ms: number) => {
-  const hours = Math.floor(ms / (60 * 60 * 1000));
-  const minutes = Math.floor(ms / (60 * 1000)) % 60;
+export const formatMsTime = (ms: number, full = false) => {
+  const minutes = Math.floor(ms / (60 * 1000));
   const seconds = Math.floor(ms / 1000) % 60;
   const milliseconds = Math.floor(ms) % 1000;
-  return `${hours > 0 ? `${hours}:` : ""}${minutes > 0 ? `${zeroPad(minutes, 2)}:` : ""}${zeroPad(seconds, 2)}.${zeroPad(milliseconds, 3)}`;
+  return `${minutes > 0 || full ? `${zeroPad(minutes, 2)}:` : ""}${zeroPad(seconds, 2)}.${zeroPad(milliseconds, 3)}`;
 };

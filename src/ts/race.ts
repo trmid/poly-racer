@@ -114,7 +114,7 @@ export class Race {
       showPerformance: false
     });
 
-    // Add window event listeners:
+    // Add event listeners:
     this.eventListeners.push({
       element: canvas,
       event: "keydown",
@@ -144,6 +144,13 @@ export class Race {
           }
           case "ESCAPE": {
             this.pause();
+            break;
+          }
+          // Space Bar
+          case " ": {
+            if(this.state == RaceState.FAILED || this.state == RaceState.DONE) this.restart();
+            else if(this.state == RaceState.COUNTDOWN || this.state == RaceState.PLAYING) this.pause();
+            else if(this.state == RaceState.PAUSED) this.start();
             break;
           }
         }
@@ -256,6 +263,12 @@ export class Race {
       }));
     }
 
+    // Stop car sound if it exists:
+    if(this.car) {
+      this.car.engineSound.stop();
+      this.car.engineSound.dispose();
+    }
+
     // Add car:
     this.car = new Car(this.volumeNode);
     const startLine = this.track.startLine;
@@ -328,6 +341,7 @@ export class Race {
       this.renderer.start(this.scene, this.car.camera);
 
       // Connect volume node:
+      this.volumeNode.disconnect();
       this.volumeNode.toDestination();
 
       // Create starting sound:
@@ -343,6 +357,7 @@ export class Race {
       this.countdownSynth.triggerAttackRelease(["G3","G4","G5"], 0.25, toneNow + 3);
 
       // Start engine sound:
+      this.car.engineSound.stop();
       this.car.engineSound.start();
 
       // Clear unpause timeouts:
@@ -453,6 +468,16 @@ export class Race {
               this.pause();
               this.stores.centerText.set(`Race Complete!\nTime: ${formatMsTime(this.gameTime)}`);
               this.state = RaceState.DONE
+
+              // Save in race history:
+              history.update(history => {
+                return [{
+                  seed: this.seed,
+                  timestamp: Date.now(),
+                  laps: laps
+                }, ...history];
+              });
+
             }
 
             return laps;
@@ -466,7 +491,7 @@ export class Race {
       // Check if car is on track:
       if(!this.car.isOnTrack()) {
         this.state = RaceState.FAILED;
-        this.stores.centerText.set("Off track!\nClick to Restart...");
+        this.stores.centerText.set("Off track!\nRestart? (Space)");
         this.car.engineSound.stop();
       }
 
