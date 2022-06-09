@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Router, { link } from "svelte-spa-router";
+  import Storage from "./components/Storage.svelte";
   import { routes } from "./routes";
 </script>
 
@@ -13,6 +14,7 @@
 
 <main>
 	<Router {routes}/>
+  <Storage />
 </main>
 
 <style>
