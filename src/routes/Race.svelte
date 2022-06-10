@@ -8,7 +8,7 @@
   import TrackPreview from "../components/TrackPreview.svelte";
   import TrackTimes from "../components/TrackTimes.svelte";
   import { favourites } from "../ts/track";
-import { turnSensitivity } from "../ts/car";
+  import { turnSensitivity } from "../ts/car";
 
   // Params:
   export let params: { seed: string };
@@ -39,8 +39,15 @@ import { turnSensitivity } from "../ts/car";
   $: trackHistory = $history.filter(x => x.seed === seed).sort((a,b) => a.timestamp - b.timestamp);
   $: personalBest = trackHistory.length > 0 ? trackHistory.reduce((a,b) => a.laps[a.laps.length - 1] < b.laps[b.laps.length - 1] ? a : b) : undefined;
 
+  // Favourites:
+  let page = 0;
+  let tracksPerPage = 3;
+  $: allFavourites = [...$favourites];
+  $: if(page * tracksPerPage > allFavourites.length - 1 && page > 0) page--;
+  $: favouritePage = allFavourites.slice(page * tracksPerPage, (page + 1) * tracksPerPage);
+
   // Random Tracks:
-  let numRandomTracks = 9;
+  let numRandomTracks = 3;
   let randomTrackArray: string[] = [];
   const generateRandomTracks = () => {
     randomTrackArray = Array(numRandomTracks).fill("").map(() => generate32bitSeed());
@@ -57,7 +64,7 @@ import { turnSensitivity } from "../ts/car";
 
   // Toggle Favourite:
   $: favourited = $favourites.has(seed);
-  const toggleFavorite = () => {
+  const toggleFavorite = (seed: string) => {
     favourites.update(favourites => {
       if(favourites.has(seed)) favourites.delete(seed);
       else favourites.add(seed);
@@ -106,8 +113,11 @@ import { turnSensitivity } from "../ts/car";
 
 <div id="track-header">
   Track Seed:
-  <span class="seed">{seed} <i title="copy" class="copy-btn icofont-ui-copy" on:click={() => { navigator.clipboard.writeText(seed); alert("Seed Copied!"); }}/></span>
-  <i title={favourited ? "Un-Favourite" : "Favourite"} class="favourite-btn icofont-favourite" class:favourited={favourited} on:click={() => toggleFavorite()}/>
+  <span class="seed">
+    <span>{seed}</span>
+    <i title="copy" class="copy-btn icofont-ui-copy" on:click={() => { navigator.clipboard.writeText(seed); alert("Seed Copied!"); }}/>
+  </span>
+  <i title={favourited ? "Un-Favourite" : "Favourite"} class="favourite-btn icofont-favourite" class:favourited={favourited} on:click={() => toggleFavorite(seed)}/>
 </div>
 
 <div id="game-panel">
@@ -136,11 +146,21 @@ import { turnSensitivity } from "../ts/car";
         </tr>
         <tr>
           <th>Volume</th>
-          <td><input type="range" min={0} max={1} step={0.05} bind:value={volume} /></td>
+          <td>
+            <div>
+              <input type="range" min={0} max={1} step={0.05} bind:value={volume} />
+              <input type="number" min={0} max={1} step={0.05} bind:value={volume} />
+            </div>
+          </td>
         </tr>
         <tr>
           <th>Steering Sensitivity</th>
-          <td><input type="range" min={0.2} max={2} step={0.1} bind:value={$turnSensitivity}></td>
+          <td>
+            <div>
+              <input type="range" min={0.2} max={2} step={0.1} bind:value={$turnSensitivity} />
+              <input type="number" min={0.2} max={2} step={0.1} bind:value={$turnSensitivity} />
+            </div>
+          </td>
         </tr>
       </table>
     </div>
@@ -152,10 +172,27 @@ import { turnSensitivity } from "../ts/car";
   </div>
 </div>
 
+<!-- Favourites -->
+<h2>Favourite Tracks:</h2>
+<div id="favourite-tracks">
+  {#each favouritePage as seed}
+    <div class="favourite-container" on:click={() => { push(`/race/${seed}`); canvas.scrollIntoView(); }}>
+      <i title={$favourites.has(seed) ? "Un-Favourite" : "Favourite"} class="favourite-btn icofont-favourite" class:favourited={$favourites.has(seed)} on:click={() => toggleFavorite(seed)}/>
+      <TrackPreview {seed}/>
+    </div>
+  {/each}
+</div>
+<br>
+<button disabled={page <= 0} on:click={() => page--}><i class="icofont-caret-left"></i> Prev</button>
+<button disabled={page * tracksPerPage >= allFavourites.length - 1} on:click={() => page++}>Next <i class="icofont-caret-right"></i></button>
+<br>
+<br>
+
+<!-- Random Tracks -->
 <h2>Other Random Tracks:</h2>
 <div id="random-tracks">
   {#each randomTrackArray as seed}
-    <div on:click={() => push(`/race/${seed}`)}>
+    <div on:click={() => { push(`/race/${seed}`); canvas.scrollIntoView(); }}>
       <TrackPreview {seed}/>
     </div>
   {/each}
@@ -200,6 +237,21 @@ import { turnSensitivity } from "../ts/car";
 
   .favourite-btn.favourited {
     color: inherit;
+  }
+
+  .favourite-btn.favourited:hover {
+    filter: brightness(0.9);
+  }
+
+  .favourite-container {
+    position: relative;
+  }
+
+  .favourite-container > .favourite-btn {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    font-size: 20px;
   }
 
   #game-panel {
@@ -320,9 +372,19 @@ import { turnSensitivity } from "../ts/car";
     text-align: left;
   }
 
-  #settings th,
-  #settings td {
+  #settings th {
     padding: 5px;
+  }
+
+  #settings td > div {
+    display: flex;
+    padding: 5px;
+    justify-content: center;
+    align-items: center;
+  }
+
+  #settings input[type="number"] {
+    width: 45px;
   }
 
   #history {
@@ -332,13 +394,15 @@ import { turnSensitivity } from "../ts/car";
     border-radius: 10px;
   }
 
-  #random-tracks {
+  #random-tracks,
+  #favourite-tracks {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 10px;
   }
 
-  #random-tracks > div {
+  #random-tracks > div,
+  #favourite-tracks > div {
     background-color: #0004;
     border-radius: 10px;
     display: flex;
@@ -346,7 +410,8 @@ import { turnSensitivity } from "../ts/car";
     cursor: pointer;
   }
 
-  #random-tracks > div:hover {
+  #random-tracks > div:hover,
+  #favourite-tracks > div:hover {
     transform: scale(1.02);
     background-color: #000;
   }
