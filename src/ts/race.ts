@@ -65,6 +65,7 @@ export class Race {
 
   // Car:
   private car: Car = new Car(this.volumeNode);
+  private turnSensitivity = 0.5;
 
   // Track:
   private track: Track | undefined;
@@ -223,6 +224,7 @@ export class Race {
     this.checkpoints = new Set();
     this.stores.centerText.set("Click to Start!");
     this.stores.completedLaps.set([]);
+    this.stores.speed.set(0);
 
     // Create Scene:
     const scene = new Scene();
@@ -270,7 +272,7 @@ export class Race {
     }
 
     // Add car:
-    this.car = new Car(this.volumeNode);
+    this.car = new Car(this.volumeNode, { turnSensitivity: this.turnSensitivity });
     const startLine = this.track.startLine;
     const startLineDiff = Vector.sub(startLine.p1, startLine.p0);
     const startLineMid = Vector.add(startLine.p0, Vector.mult(startLineDiff, 0.5));
@@ -318,6 +320,11 @@ export class Race {
     } else {
       this.volumeNode.volume.value = (1 - volume) * -32;
     }
+  }
+
+  public setTurnSensitivity(turnSensitivity: number) {
+    this.car.turnSensitivity = turnSensitivity;
+    this.turnSensitivity = turnSensitivity;
   }
 
   public restart() {

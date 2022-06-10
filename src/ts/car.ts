@@ -5,7 +5,12 @@ import raceCarBodySTL from "../../assets/racecar_body.stl.json";
 import type { Volume } from "tone";
 import { EngineSound } from "./engine";
 import type { Track } from "./track";
+import { writable } from "svelte/store";
 
+// Turn sensitivity store:
+export const turnSensitivity = writable(0.5);
+
+// Car class:
 export class Car {
 
   // Car state:
@@ -43,7 +48,7 @@ export class Car {
   static drag = new Vector(-9.92);
   private turnAngle = 0; // radians
   private maxTurn = Math.PI * 0.05;
-  private turnSensitivity = 0.5; // radians / sec
+  private _turnSensitivity = 0.5; // radians / sec
   static backWheelCircumference = 2.08; // m
   static frontWheelCircumference = 1.60; // m
   static frontWheelXOffset = 1.7235; // m
@@ -77,7 +82,10 @@ export class Car {
   public left = false;
   public right = false;
 
-  constructor(audioDestination: Volume) {
+  constructor(audioDestination: Volume, { turnSensitivity }: { turnSensitivity?: number } = {}) {
+
+    // Assign optional variables:
+    if(turnSensitivity && turnSensitivity > 0) this.turnSensitivity = turnSensitivity;
 
     // Create engine sound:
     this.engineSound = new EngineSound(audioDestination);
@@ -270,6 +278,15 @@ export class Car {
 
   public getSpeed() {
     return this.speed;
+  }
+
+  public get turnSensitivity() {
+    return this._turnSensitivity;
+  }
+
+  public set turnSensitivity(turnSensitivity: number) {
+    if(turnSensitivity <= 0) throw new Error("Turn sensitivity must be greater than zero.");
+    this._turnSensitivity = turnSensitivity;
   }
 
 }

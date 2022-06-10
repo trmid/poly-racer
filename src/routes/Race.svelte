@@ -8,6 +8,7 @@
   import TrackPreview from "../components/TrackPreview.svelte";
   import TrackTimes from "../components/TrackTimes.svelte";
   import { favourites } from "../ts/track";
+import { turnSensitivity } from "../ts/car";
 
   // Params:
   export let params: { seed: string };
@@ -28,6 +29,7 @@
   let laps: number[] = [];
   let lapTimes: (number | null)[];
   $: if(race) race.load(seed); // dynamic race load
+  $: if(race) race.setTurnSensitivity($turnSensitivity); // dynamic turn sensitivity update
   $: lapTimes = laps.map((t,i) => t - ( i == 0 ? 0 : laps[i - 1]));
   $: while(lapTimes.length < race?.totalLaps ?? 0) {
     lapTimes.push(null);
@@ -138,7 +140,7 @@
         </tr>
         <tr>
           <th>Steering Sensitivity</th>
-          <td><input type="range" min={0.1} max={2} step={0.1}></td>
+          <td><input type="range" min={0.2} max={2} step={0.1} bind:value={$turnSensitivity}></td>
         </tr>
       </table>
     </div>

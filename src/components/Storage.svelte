@@ -3,6 +3,7 @@
   import { history } from "../ts/race";
   import type { Unsubscriber } from "svelte/store";
   import { favourites } from "../ts/track";
+  import { turnSensitivity } from "../ts/car";
 
   // Unsubscribers:
   let unsubs: Unsubscriber[] = [];
@@ -34,6 +35,14 @@
       favourites.set(new Set(storedFavorites));
       unsubs.push(favourites.subscribe(favourites => {
         localStorage.setItem("favourites", JSON.stringify([...favourites]));
+      }));
+    }
+
+    // Init turn sensitivity:
+    {
+      turnSensitivity.set(parseFloat(localStorage.getItem("turnSensitivity") ?? "0.5") || 0.5);
+      unsubs.push(turnSensitivity.subscribe(turnSensitivity => {
+        localStorage.setItem("turnSensitivity", "" + turnSensitivity);
       }));
     }
 
