@@ -517,9 +517,7 @@ export class Race {
             this.ghostCar.turnSensitivity = currentInput.turnSensitivity;
 
             // Update to current frame time
-            if(nextInput) {
-              this.ghostCar.update(t, this.track);
-            }
+            this.ghostCar.update(t, this.track);
           }
 
           // Get current car position:
@@ -639,16 +637,32 @@ export class Race {
       new Vector(Car.wheelPositions.backLeft.position.x, Car.wheelPositions.backLeft.position.y, 0),
       new Vector(Car.wheelPositions.backRight.position.x, Car.wheelPositions.backRight.position.y, 0)
     ));
+
+    // Add car:
     const carMat = this.car.body.material.copy();
     carMat.lit = false;
     const car = new MeshUrbject({
-      mesh: carMesh.scale(8),
-      position: this.ghostCar?.body.position,
-      orientation: this.ghostCar?.body.orientation,
+      mesh: Mesh.scale(carMesh, 8),
+      position: this.car.body.position,
+      orientation: this.car.body.orientation,
       material: carMat,
-      group: 1
+      group: 2
     });
     scene.add(car);
+
+    // Add ghost car:
+    if(this.ghostCar) {
+      const ghostMat = new Material({ lit: false, fill: new Color(150) });
+      const ghostCar = new MeshUrbject({
+        mesh: Mesh.scale(carMesh, 8),
+        position: this.ghostCar.body.position,
+        orientation: this.ghostCar.body.orientation,
+        material: ghostMat,
+        group: 1
+      });
+      scene.add(ghostCar);
+    }
+
     if(!this.minimapCarRenderer) this.minimapCarRenderer = new Renderer({
       canvas: this.minimapCarCanvas,
       backgroundColor: new Color(0, 0),
