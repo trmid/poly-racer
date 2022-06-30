@@ -1,4 +1,4 @@
-const cacheName = "1.1.0"; // Change value to force update
+const cacheName = "1.1.1"; // Change value to force update
 
 self.addEventListener("install", event => {
 	// Kick out the old service worker
@@ -6,8 +6,6 @@ self.addEventListener("install", event => {
 	event.waitUntil(
 		caches.open(cacheName).then(cache => {
 			return cache.addAll([
-        // Main page
-				"/",
 
         // HTML Files
 				"index.html",
@@ -54,7 +52,7 @@ self.addEventListener("fetch", event => {
 					cache.put(event.request, networkResponse.clone());
 					return networkResponse;
 				});
-				return response || networkResponse;
+				return response ?? networkResponse;
 			})
 		})
 	);
