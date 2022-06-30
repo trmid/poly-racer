@@ -25,8 +25,8 @@ export class Car {
   static defaultCameraOrientation = Quaternion.fromVector(new Vector(5, 0, -1));
 
   // Materials:
-  static wheelMaterial = new Material({ fill: new Color(30) });
-  static offTrackWheelMaterial = new Material({ fill: new Color(255, 200, 0, 1) });
+  private wheelMaterial = new Material({ fill: new Color(30) });
+  private offTrackWheelMaterial = new Material({ fill: new Color(255, 200, 0, 1) });
 
   // Urbjects:
   readonly body: MeshUrbject;
@@ -82,10 +82,16 @@ export class Car {
   public left = false;
   public right = false;
 
-  constructor(audioDestination: Volume, { turnSensitivity }: { turnSensitivity?: number } = {}) {
+  constructor(audioDestination: Volume, { turnSensitivity, isGhostCar, startLine }: { turnSensitivity?: number,isGhostCar?: boolean, startLine?: { p0: Vector, p1: Vector } } = {}) {
 
     // Assign optional variables:
     if(turnSensitivity && turnSensitivity > 0) this.turnSensitivity = turnSensitivity;
+
+    // Switch wheel material to wire if ghost car:
+    if(isGhostCar) {
+      this.wheelMaterial = new Material({ wire: this.wheelMaterial.fill, fill: new Color(0, 0) });
+      this.offTrackWheelMaterial = new Material({ wire: this.offTrackWheelMaterial.fill, fill: new Color(0, 0) });
+    }
 
     // Create engine sound:
     this.engineSound = new EngineSound(audioDestination);
@@ -102,9 +108,9 @@ export class Car {
     this.body = new MeshUrbject({
       position: new Vector(0, 0, 0),
       mesh: Mesh.generateFromArrayData(raceCarBodySTL).rotateZ(Math.PI/2),
-      material: new Material({
-        fill: new Color("red"),
-      })
+      material: isGhostCar ?
+        new Material({ wire: new Color("red"), fill: new Color(0, 0) }) :
+        new Material({ fill: new Color("red") })
     });
     this.body.addChild(this.camera);
 
@@ -118,7 +124,7 @@ export class Car {
     // Create back left wheel:
     this.backLeftWheel = new MeshUrbject({
       mesh: backWheelMesh,
-      material: Car.wheelMaterial,
+      material: this.wheelMaterial,
       position: Car.wheelPositions.backLeft.position
     });
     this.body.addChild(this.backLeftWheel);
@@ -126,7 +132,7 @@ export class Car {
     // Create back right wheel:
     this.backRightWheel = new MeshUrbject({
       mesh: backWheelMesh,
-      material: Car.wheelMaterial,
+      material: this.wheelMaterial,
       position: Car.wheelPositions.backRight.position
     });
     this.body.addChild(this.backRightWheel);
@@ -144,7 +150,7 @@ export class Car {
     });
     this.frontLeftWheel = new MeshUrbject({
       mesh: frontWheelMesh,
-      material: Car.wheelMaterial
+      material: this.wheelMaterial
     });
     this.frontLeftAxel.addChild(this.frontLeftWheel);
     this.body.addChild(this.frontLeftAxel);
@@ -155,13 +161,23 @@ export class Car {
     });
     this.frontRightWheel = new MeshUrbject({
       mesh: frontWheelMesh,
-      material: Car.wheelMaterial
+      material: this.wheelMaterial
     });
     this.frontRightAxel.addChild(this.frontRightWheel);
     this.body.addChild(this.frontRightAxel);
 
+    // Align to start line:
+    if(startLine) {
+      const startLineDiff = Vector.sub(startLine.p1, startLine.p0);
+      const startLineMid = Vector.add(startLine.p0, Vector.mult(startLineDiff, 0.5));
+      this.body.orientation = Quaternion.fromVector(startLineDiff, Vector.xAxis()).rotateZ(Math.PI/2);
+      this.direction = Vector.xAxis().qRotate(this.body.orientation);
+      this.body.position = Vector.sub(startLineMid, new Vector(Car.noseXOffset).qRotate(this.body.orientation));
+    }
+
   }
 
+  // TODO: Make car move at fixed t-interval regardless of framerate
   public update(t: number, track: Track) {
     // Handle Acceleration:
     this.acceleration = new Vector();
@@ -241,33 +257,33 @@ export class Car {
     // Front Left:
     if(track.onTrack(Vector.qRotate(Car.wheelPositions.frontLeft.position, this.body.orientation).add(this.body.position), Car.wheelPositions.frontLeft.radius)) {
       this.onTrack = true;
-      this.frontLeftWheel.material = Car.wheelMaterial;
+      this.frontLeftWheel.material = this.wheelMaterial;
     } else {
-      this.frontLeftWheel.material = Car.offTrackWheelMaterial;
+      this.frontLeftWheel.material = this.offTrackWheelMaterial;
     }
 
     // Front Right:
     if(track.onTrack(Vector.qRotate(Car.wheelPositions.frontRight.position, this.body.orientation).add(this.body.position), Car.wheelPositions.frontRight.radius)) {
       this.onTrack = true;
-      this.frontRightWheel.material = Car.wheelMaterial;
+      this.frontRightWheel.material = this.wheelMaterial;
     } else {
-      this.frontRightWheel.material = Car.offTrackWheelMaterial;
+      this.frontRightWheel.material = this.offTrackWheelMaterial;
     }
 
     // Back Left:
     if(track.onTrack(Vector.qRotate(Car.wheelPositions.backLeft.position, this.body.orientation).add(this.body.position), Car.wheelPositions.backLeft.radius)) {
       this.onTrack = true;
-      this.backLeftWheel.material = Car.wheelMaterial;
+      this.backLeftWheel.material = this.wheelMaterial;
     } else {
-      this.backLeftWheel.material = Car.offTrackWheelMaterial;
+      this.backLeftWheel.material = this.offTrackWheelMaterial;
     }
 
     // Back Right:
     if(track.onTrack(Vector.qRotate(Car.wheelPositions.backRight.position, this.body.orientation).add(this.body.position), Car.wheelPositions.backRight.radius)) {
       this.onTrack = true;
-      this.backRightWheel.material = Car.wheelMaterial;
+      this.backRightWheel.material = this.wheelMaterial;
     } else {
-      this.backRightWheel.material = Car.offTrackWheelMaterial;
+      this.backRightWheel.material = this.offTrackWheelMaterial;
     }
 
   }

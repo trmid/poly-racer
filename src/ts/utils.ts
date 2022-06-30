@@ -100,3 +100,33 @@ export const formatMsTime = (ms: number, full = false) => {
   const milliseconds = Math.floor(ms) % 1000;
   return `${minutes > 0 || full ? `${zeroPad(minutes, 2)}:` : ""}${zeroPad(seconds, 2)}.${zeroPad(milliseconds, 3)}`;
 };
+
+/**
+ * Converts an ArrayBuffer to a binary string.
+ * 
+ * @param buffer 
+ * @returns binary string
+ */
+export function arrayBufferToString(buffer: ArrayBuffer) {
+  let binaryStr = '';
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binaryStr += String.fromCharCode( bytes[i]);
+  }
+  return binaryStr;
+}
+
+/**
+ * Converts a binary string to an ArrayBuffer.
+ * 
+ * @param str 
+ * @returns ArrayBuffer
+ */
+export function stringToArrayBuffer(str: string) {
+  const buffer = new ArrayBuffer(str.length);
+  const bytes = new Uint8Array(buffer);
+  for(let i = 0; i < str.length; i++) {
+    bytes[i] = str.charCodeAt(i);
+  }
+  return buffer;
+}

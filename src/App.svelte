@@ -19,6 +19,37 @@
 
 <style>
 
+  :global(html), :global(body) {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  :global(body) {
+    margin: 0;
+    box-sizing: border-box;
+    font-family: Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+    background-color: #ffea80;
+    background-image: url('../img/polyBG.webp');
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+  }
+
+  :global(.no-select) {
+    user-select: none;
+    -moz-user-select: none;
+  }
+
+  :global(button), :global(input) {
+    padding: 7px;
+    border-radius: 7px;
+  }
+
+  :global(button) {
+    cursor: pointer;
+  }
+
   header {
     position: sticky;
     position: -webkit-sticky;

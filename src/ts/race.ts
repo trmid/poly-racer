@@ -2,7 +2,7 @@ import { now, PolySynth, Synth, Volume } from "tone";
 import { Track } from "./track";
 import { writable } from "svelte/store";
 import { Car } from "./car";
-import { formatMsTime, linesCross } from "./utils";
+import { arrayBufferToString, formatMsTime, linesCross, stringToArrayBuffer } from "./utils";
 
 export interface RaceRecord {
   timestamp: number
@@ -23,6 +23,9 @@ export enum RaceState {
 
 export class Race {
 
+  // Milliseconds per update:
+  static msPerUpdate = 1000 / 100; // 100 per second
+
   // Seed:
   private seed: string = "";
 
@@ -41,8 +44,14 @@ export class Race {
 
   // Game state:
   private _state: RaceState = RaceState.READY;
-  private _gameTime: number = 0;
+  private _gameTime = 0;
+  private playTimeElapsed = 0;
   private unpauseTimeouts: NodeJS.Timeout[] = [];
+  private inputHistory: {
+    inputs: number, // 1 byte (first bit -> up, down, left, right)
+    timestamp: number,
+    turnSensitivity: number
+  }[] = [];
 
   // Lap Info:
   public readonly totalLaps = 3;
@@ -66,6 +75,11 @@ export class Race {
   // Car:
   private car: Car = new Car(this.volumeNode);
   private turnSensitivity = 0.5;
+
+  // Ghost car:
+  private ghostCar: Car | undefined;
+  private ghostCarInputHistory: (typeof this.inputHistory) | undefined;
+  private ghostCarLastInputIndex = 0;
 
   // Track:
   private track: Track | undefined;
@@ -220,8 +234,12 @@ export class Race {
     this.seed = seed;
     this.state = RaceState.READY;
     this.gameTime = 0;
+    this.playTimeElapsed = 0;
     this.timer = new Stats();
     this.checkpoints = new Set();
+    this.inputHistory = [];
+    this.ghostCar = undefined;
+    this.ghostCarInputHistory = undefined;
     this.stores.centerText.set("Click to Start!");
     this.stores.completedLaps.set([]);
     this.stores.speed.set(0);
@@ -272,14 +290,15 @@ export class Race {
     }
 
     // Add car:
-    this.car = new Car(this.volumeNode, { turnSensitivity: this.turnSensitivity });
     const startLine = this.track.startLine;
-    const startLineDiff = Vector.sub(startLine.p1, startLine.p0);
-    const startLineMid = Vector.add(startLine.p0, Vector.mult(startLineDiff, 0.5));
-    this.car.body.orientation = Quaternion.fromVector(startLineDiff, Vector.xAxis()).rotateZ(Math.PI/2);
-    this.car.direction = Vector.xAxis().qRotate(this.car.body.orientation);
-    this.car.body.position = Vector.sub(startLineMid, new Vector(Car.noseXOffset).qRotate(this.car.body.orientation));
+    this.car = new Car(this.volumeNode, { turnSensitivity: this.turnSensitivity, startLine });
     this.scene.add(this.car.body);
+
+    // Add Ghost car if personal best is available:
+    const pbReplay = localStorage.getItem(`pb:${this.seed}`);
+    if(pbReplay) {
+      this.loadReplayBuffer(stringToArrayBuffer(pbReplay));
+    }
     
     // Minimap setup:
     {
@@ -336,6 +355,13 @@ export class Race {
 
     if(this.state == RaceState.PAUSED || this.state == RaceState.READY) {
 
+      // Add ghost car if not added:
+      if(this.ghostCarInputHistory && !this.ghostCar) {
+        this.ghostCar = new Car(this.volumeNode, { startLine: this.track?.startLine, isGhostCar: true });
+        this.ghostCarLastInputIndex = 0;
+        this.scene.add(this.ghostCar.body);
+      }
+
       // Unpause game:
       this.state = RaceState.COUNTDOWN;
       this.canvas.focus();
@@ -381,12 +407,13 @@ export class Race {
           this.stores.centerText.set("GO!");
           this.timer.startTimer();
           this.state = RaceState.PLAYING;
+
+          // Start updating:
+          this.update();
         }, 3000),
         setTimeout(() => this.stores.centerText.set(""), 4000)
       ];
-
     }
-
   }
 
   public pause() {
@@ -418,93 +445,184 @@ export class Race {
   }
 
   /**
-   * Frame callback:
+   * Update function:
    */
-  private draw() {
-    const millisecondsElapsed = this.timer.readCheckpoint();
-    const t = millisecondsElapsed / 1000;
-
+  private update() {
     if(this.state == RaceState.PLAYING) {
+
+      // Request next update:
+      requestAnimationFrame(() => this.update());
+
+      // Get time:
+      const millisecondsElapsed = this.timer.readCheckpoint();
 
       // Check if track is loaded:
       if(!this.track) this.track = new Track(this.seed);
 
       // Add to game time:
-      this.gameTime += millisecondsElapsed;
-      this.stores.gameTime.set(this.gameTime);
+      this.playTimeElapsed += millisecondsElapsed;
 
-      // Get current car position:
-      const lastCarPos = this.car.body.position.copy();
-      
-      // Update Car movement:
-      this.car.update(t, this.track);
+      // Catch up game state to current time based off of update rate:
+      for(; this.gameTime <= this.playTimeElapsed; this.gameTime += Race.msPerUpdate) {
 
-      // Get new car position:
-      const newCarPos = this.car.body.position.copy();
+        // Get seconds per frame:
+        const t = Race.msPerUpdate / 1000;
 
-      // Get checkpoints:
-      const checkpoints = this.track.nearTrigons(newCarPos, (Car.noseXOffset - Car.wheelPositions.backLeft.position.x) / 2);
-      for(const checkpoint of checkpoints) {
-        this.checkpoints.add(checkpoint);
-      }
+        // Check if update time is valid:
+        if(this.gameTime % Race.msPerUpdate != 0) {
+          throw new Error("Update time is out of sync with update rate.");
+        }
 
-      // Check if car has touched at least 80% of checkpoints:
-      if(this.checkpoints.size > 0.8 * this.track.totalTrigons()) {
+        // Check every update for playing state:
+        if(this.state == RaceState.PLAYING) {
 
-        // Check if car has cross finish line:
-        const noseOffset = new Vector(Car.noseXOffset, 0).qRotate(this.car.body.orientation);
-        const startLineDiff = Vector.sub(this.track.startLine.p1, this.track.startLine.p0);
-        if(linesCross(
-          Vector.add(lastCarPos, noseOffset),
-          Vector.add(newCarPos, noseOffset),
-          Vector.sub(this.track.startLine.p0, Vector.mult(startLineDiff, 0.5)),
-          Vector.add(this.track.startLine.p1, Vector.mult(startLineDiff, 0.5))
-        )) {
+          // Record inputs:
+          const inputs = 
+            (this.car.up ? 0b0001 : 0) | 
+            (this.car.down ? 0b0010 : 0) |
+            (this.car.left ? 0b0100 : 0) |
+            (this.car.right ? 0b1000 : 0);
+          const lastRecord = this.inputHistory[this.inputHistory.length - 1];
+          if(!lastRecord || (inputs != lastRecord.inputs) || (this.turnSensitivity != lastRecord.turnSensitivity)) {
+            this.inputHistory.push({
+              inputs,
+              timestamp: this.gameTime,
+              turnSensitivity: this.turnSensitivity
+            });
+          }
 
-          console.log(`${(100 * this.checkpoints.size / this.track.totalTrigons()).toFixed(2)}%`);
+          // Update ghost car:
+          if(this.ghostCar && this.ghostCarInputHistory) {
 
-          // Reset checkpoints and add lap time:
-          this.checkpoints = new Set();
-          this.stores.completedLaps.update(laps => {
+            // Get current input:
+            let currentInput = this.ghostCarInputHistory[this.ghostCarLastInputIndex];
 
-            // Push lap time:
-            laps.push(this.gameTime);
-
-            // Check if all laps are complete:
-            if(laps.length == this.totalLaps) {
-              this.pause();
-              this.stores.centerText.set(`Race Complete!\nTime: ${formatMsTime(this.gameTime)}`);
-              this.state = RaceState.DONE
-
-              // Save in race history:
-              history.update(history => {
-                return [{
-                  seed: this.seed,
-                  timestamp: Date.now(),
-                  laps: laps
-                }, ...history];
-              });
-
+            // Iterate to next input if ready:
+            const nextInput = this.ghostCarInputHistory[this.ghostCarLastInputIndex + 1];
+            if(nextInput && nextInput.timestamp <= this.gameTime) {
+              currentInput = nextInput;
+              this.ghostCarLastInputIndex++;
             }
 
-            return laps;
-          });
+            // Check current input validity:
+            if(currentInput.timestamp % Race.msPerUpdate != 0) {
+              throw new Error("Ghost car input timestamp out of sync with update rate.");
+            }
+
+            // update ghost car inputs:
+            this.ghostCar.up =     !!(currentInput.inputs & 0b0001);
+            this.ghostCar.down =   !!(currentInput.inputs & 0b0010);
+            this.ghostCar.left =   !!(currentInput.inputs & 0b0100);
+            this.ghostCar.right =  !!(currentInput.inputs & 0b1000);
+            this.ghostCar.turnSensitivity = currentInput.turnSensitivity;
+
+            // Update to current frame time
+            if(nextInput) {
+              this.ghostCar.update(t, this.track);
+            }
+          }
+
+          // Get current car position:
+          const lastCarPos = this.car.body.position.copy();
+          
+          // Update Car movement:
+          this.car.update(t, this.track);
+
+          // Get new car position:
+          const newCarPos = this.car.body.position.copy();
+
+          // Get checkpoints:
+          const checkpoints = this.track.nearTrigons(newCarPos, (Car.noseXOffset - Car.wheelPositions.backLeft.position.x) / 2);
+          for(const checkpoint of checkpoints) {
+            this.checkpoints.add(checkpoint);
+          }
+
+          // Check if car has touched at least 80% of checkpoints:
+          if(this.checkpoints.size > 0.8 * this.track.totalTrigons()) {
+
+            // Check if car has cross finish line:
+            const noseOffset = new Vector(Car.noseXOffset, 0).qRotate(this.car.body.orientation);
+            const startLineDiff = Vector.sub(this.track.startLine.p1, this.track.startLine.p0);
+            if(linesCross(
+              Vector.add(lastCarPos, noseOffset),
+              Vector.add(newCarPos, noseOffset),
+              Vector.sub(this.track.startLine.p0, Vector.mult(startLineDiff, 0.5)),
+              Vector.add(this.track.startLine.p1, Vector.mult(startLineDiff, 0.5))
+            )) {
+
+              console.log(`${(100 * this.checkpoints.size / this.track.totalTrigons()).toFixed(2)}%`);
+
+              // Reset checkpoints and add lap time:
+              this.checkpoints = new Set();
+              this.stores.completedLaps.update(laps => {
+
+                // Push lap time:
+                laps.push(this.gameTime);
+
+                // Check if all laps are complete:
+                if(laps.length == this.totalLaps) {
+
+                  // Pause game:
+                  this.pause();
+                  this.state = RaceState.DONE
+
+                  // Save in race history:
+                  history.update(history => {
+
+                    // Check if personal best:
+                    const pastRaces = history.filter(race => race.seed == this.seed);
+                    const bestRace = pastRaces.length > 0 ? pastRaces.reduce((a,b) => a.laps[a.laps.length - 1] < b.laps[b.laps.length - 1] ? a : b) : undefined;
+                    const bestTime = bestRace ? bestRace.laps[bestRace.laps.length - 1] : undefined;
+                    const isPersonalBest = bestTime === undefined || this.gameTime < bestTime;
+
+                    // Update text:
+                    this.stores.centerText.set(`${isPersonalBest ? "Personal Best" : "Race Complete"}!\nTime: ${formatMsTime(this.gameTime)}`);
+
+                    // Store replay if best:
+                    if(isPersonalBest) {
+                      localStorage.setItem(`pb:${this.seed}`, arrayBufferToString(this.getReplayBuffer()));
+                    }
+
+                    return [{
+                      seed: this.seed,
+                      timestamp: Date.now(),
+                      laps: laps
+                    }, ...history];
+                  });
+                }
+
+                return laps;
+              });
+            }
+          }
+
+          // Check if car is on track:
+          if(!this.car.isOnTrack()) {
+            this.state = RaceState.FAILED;
+            this.stores.centerText.set("Off track!\nRestart? (Space)");
+            this.car.engineSound.stop();
+          }
         }
-      }
-
-      // Update minimap:
-      this.updateMinimap();
-
-      // Check if car is on track:
-      if(!this.car.isOnTrack()) {
-        this.state = RaceState.FAILED;
-        this.stores.centerText.set("Off track!\nRestart? (Space)");
-        this.car.engineSound.stop();
       }
 
       // Set speed store:
       this.stores.speed.set(this.car.getSpeed() * 60 * 60 / 1000);
+
+      // Update game time:
+      this.stores.gameTime.set(this.gameTime);
     }
+  }
+
+  /**
+   * Frame callback:
+   * 
+   * This function is called after every frame render.
+   * Use this for non-timed updates to ui.
+   */
+  private draw() {
+
+    // Update minimap:
+    this.updateMinimap();
   }
 
   /**
@@ -525,8 +643,8 @@ export class Race {
     carMat.lit = false;
     const car = new MeshUrbject({
       mesh: carMesh.scale(8),
-      position: this.car.body.position,
-      orientation: this.car.body.orientation,
+      position: this.ghostCar?.body.position,
+      orientation: this.ghostCar?.body.orientation,
       material: carMat,
       group: 1
     });
@@ -574,6 +692,80 @@ export class Race {
   private set gameTime(time: number) {
     this._gameTime = time;
     this.stores.gameTime.set(time);
+  }
+
+  /**
+   * Get the replay buffer for this race.
+   * Throws if the race was not completed.
+   * 
+   * @returns Replay Buffer
+   */
+  public getReplayBuffer() {
+    if(this.state != RaceState.DONE) throw new Error("Cannot get a replay buffer from a race that is not complete!");
+    return Race.inputHistoryToBuffer(this.seed, this.inputHistory);
+  }
+
+  /**
+   * Loads a replay buffer to play against.
+   * Throws if the race state has already begun.
+   * 
+   * @param buffer Replay Buffer
+   */
+  public loadReplayBuffer(buffer: ArrayBuffer) {
+    if(this.state != RaceState.READY) throw new Error("Cannot load a replay after the race has started!");
+    const replay = Race.replayBufferToInputHistory(buffer);
+    if(replay.trackSeed !== this.seed) throw new Error("Replay track seed does not match!");
+    this.ghostCarInputHistory = replay.inputHistory;
+  }
+
+  /* Replay Buffer Constants */
+  static BYTES_PER_INPUT_RECORD = 1 + 4 + 4;
+  static TRACK_SEED_BYTE_LENGTH = 4;
+
+  /**
+   * Converts the track seed and input history into a replay buffer.
+   * 
+   * @param trackSeed Track Seed String
+   * @param inputHistory Input History Array
+   * @returns Replay Buffer
+   */
+  static inputHistoryToBuffer(trackSeed: string, inputHistory: typeof Race.prototype.inputHistory) {
+    const totalBytes = Race.TRACK_SEED_BYTE_LENGTH + inputHistory.length * Race.BYTES_PER_INPUT_RECORD;
+    const buffer = new ArrayBuffer(totalBytes);
+    const view = new DataView(buffer);
+    view.setUint32(0, parseInt(trackSeed, 16));
+    for(let i = 0; i < inputHistory.length; i++) {
+      const byteOffset = Race.TRACK_SEED_BYTE_LENGTH + i * Race.BYTES_PER_INPUT_RECORD;
+      view.setUint8(byteOffset, inputHistory[i].inputs);
+      view.setFloat32(byteOffset + 1, inputHistory[i].timestamp);
+      view.setFloat32(byteOffset + 5, inputHistory[i].turnSensitivity);
+    }
+    return buffer;
+  }
+
+  /**
+   * Converts the input history buffer into a readable track seed and input history array.
+   * 
+   * @param replay Replay Array Buffer
+   * @returns Replay Object
+   */
+  static replayBufferToInputHistory(replay: ArrayBuffer) {
+    const view = new DataView(replay);
+    if((view.byteLength - Race.TRACK_SEED_BYTE_LENGTH) % Race.BYTES_PER_INPUT_RECORD != 0) throw new Error("Invalid replay byte length!");
+    const trackSeed = view.getUint32(0).toString(16).padStart(8, '0');
+    const inputHistory: typeof Race.prototype.inputHistory = [];
+    for(let i = 0; i < (view.byteLength - Race.TRACK_SEED_BYTE_LENGTH) / Race.BYTES_PER_INPUT_RECORD; i++) {
+      const byteOffset = i * Race.BYTES_PER_INPUT_RECORD + Race.TRACK_SEED_BYTE_LENGTH;
+      inputHistory.push({
+        inputs: view.getUint8(byteOffset),
+        timestamp: view.getFloat32(byteOffset + 1),
+        turnSensitivity: view.getFloat32(byteOffset + 5)
+      });
+    }
+    return {
+      trackSeed,
+      inputHistory
+    };
   }
 
 }
