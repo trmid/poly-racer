@@ -1,9 +1,8 @@
 <script type="ts">
 
 	// Imports:
-	import { onDestroy, onMount } from "svelte";
+	import { onMount } from "svelte";
 	import { push } from 'svelte-spa-router';
-  import { Volume } from "tone";
   import { Car } from "../ts/car";
 	import { isValidSeed } from "../ts/random";
 
@@ -37,7 +36,7 @@
     }));
 
     // Add car:
-		let car = new Car(new Volume());
+		let car = new Car();
     scene.add(car.body);
 
     // Create Camera:
@@ -156,8 +155,8 @@
 		font-size: 1.5em;
 		text-transform: uppercase;
 		background-color: #ee3b2b;
-		border: 2px solid black;
-		border-radius: 3px;
+		border: 2px solid #333;
+		border-radius: 5px;
 	}
 
 	.actionItems .actioninfo .seed {
@@ -169,21 +168,22 @@
 	.actionItems .actionInfo .seed .seedForm {
 		display: flex;
 		margin: .5em 0;
-		border: 2px solid black;
-		border-radius: 3px;
+		border-radius: 7px;
 		overflow: hidden;
 	}
 
 	.actionItems .actionInfo .seed .seedForm > input {
 		flex: 1;
 		padding: .5em;
-		border: none;
+		margin-right: .5em;
+		border: 2px solid #333;
 		outline: none;
 	}
 
 	.actionItems .actionInfo .seed .seedForm > button {
 		background-color: #ee3b2b;
-		border: none;
+		margin-right: .5em;
+		border: 2px solid #333;
 		text-transform: uppercase;
 	}
 

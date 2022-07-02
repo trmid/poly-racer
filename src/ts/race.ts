@@ -2,7 +2,7 @@ import { now, PolySynth, Synth, Volume } from "tone";
 import { Track } from "./track";
 import { writable } from "svelte/store";
 import { Car } from "./car";
-import { arrayBufferToString, formatMsTime, linesCross, stringToArrayBuffer } from "./utils";
+import { arrayBufferToString, formatMsTime } from "./utils";
 
 export interface RaceRecord {
   timestamp: number
@@ -18,7 +18,8 @@ export enum RaceState {
   PLAYING,
   PAUSED,
   DONE,
-  FAILED
+  FAILED,
+  DESTROYED
 }
 
 export class Race {
@@ -64,6 +65,7 @@ export class Race {
     state: writable(RaceState.READY),
     gameTime: writable(0),
     completedLaps: writable<number[]>([]),
+    ghostLaps: writable<number[]>([])
   };
   
   // Sound Settings:
@@ -73,7 +75,7 @@ export class Race {
   private scene: Scene = new Scene();
 
   // Car:
-  private car: Car = new Car(this.volumeNode);
+  private car: Car = new Car();
   private turnSensitivity = 0.5;
 
   // Ghost car:
@@ -158,7 +160,8 @@ export class Race {
             break;
           }
           case "ESCAPE": {
-            this.pause();
+            if(this.state == RaceState.COUNTDOWN || this.state == RaceState.PLAYING) this.pause();
+            else if (this.state == RaceState.PAUSED) this.restart();
             break;
           }
           // Space Bar
@@ -230,7 +233,16 @@ export class Race {
    */
   public load(seed: string) {
 
+    // Stop car sound if it exists:
+    if(this.car) {
+      this.car.engineSound?.stop();
+      this.car.engineSound?.dispose();
+      this.ghostCar?.engineSound?.stop();
+      this.ghostCar?.engineSound?.dispose();
+    }
+
     // Init vars:
+    const isNewSeed = this.seed !== seed;
     this.seed = seed;
     this.state = RaceState.READY;
     this.gameTime = 0;
@@ -239,7 +251,10 @@ export class Race {
     this.checkpoints = new Set();
     this.inputHistory = [];
     this.ghostCar = undefined;
-    this.ghostCarInputHistory = undefined;
+    if(isNewSeed) {
+      this.ghostCarInputHistory = undefined;
+      this.stores.ghostLaps.set([]);
+    }
     this.stores.centerText.set("Click to Start!");
     this.stores.completedLaps.set([]);
     this.stores.speed.set(0);
@@ -283,22 +298,14 @@ export class Race {
       }));
     }
 
-    // Stop car sound if it exists:
-    if(this.car) {
-      this.car.engineSound.stop();
-      this.car.engineSound.dispose();
-    }
-
     // Add car:
-    const startLine = this.track.startLine;
-    this.car = new Car(this.volumeNode, { turnSensitivity: this.turnSensitivity, startLine });
+    const lastCar = this.car;
+    this.car = new Car({ track: this.track, audioDestination: this.volumeNode, turnSensitivity: this.turnSensitivity });
     this.scene.add(this.car.body);
-
-    // Add Ghost car if personal best is available:
-    const pbReplay = localStorage.getItem(`pb:${this.seed}`);
-    if(pbReplay) {
-      this.loadReplayBuffer(stringToArrayBuffer(pbReplay));
-    }
+    this.car.up = lastCar.up;
+    this.car.left = lastCar.left;
+    this.car.right = lastCar.right;
+    this.car.down = lastCar.down;
     
     // Minimap setup:
     {
@@ -357,7 +364,7 @@ export class Race {
 
       // Add ghost car if not added:
       if(this.ghostCarInputHistory && !this.ghostCar) {
-        this.ghostCar = new Car(this.volumeNode, { startLine: this.track?.startLine, isGhostCar: true });
+        this.ghostCar = new Car({ track: this.track, isGhostCar: true });
         this.ghostCarLastInputIndex = 0;
         this.scene.add(this.ghostCar.body);
       }
@@ -390,8 +397,8 @@ export class Race {
       this.countdownSynth.triggerAttackRelease(["G3","G4","G5"], 0.25, toneNow + 3);
 
       // Start engine sound:
-      this.car.engineSound.stop();
-      this.car.engineSound.start();
+      this.car.engineSound?.stop();
+      this.car.engineSound?.start();
 
       // Clear unpause timeouts:
       for(const timeout of this.unpauseTimeouts) {
@@ -420,7 +427,7 @@ export class Race {
     if(this.state == RaceState.PLAYING || this.state == RaceState.READY || this.state == RaceState.COUNTDOWN) {
 
       // Set center text:
-      this.stores.centerText.set("Click to Resume...");
+      this.stores.centerText.set("Resume (Space)\nRestart (Esc)");
 
       // Pause game:
       this.state = RaceState.PAUSED;
@@ -432,13 +439,22 @@ export class Race {
       }
       
       // Pause engine sounds:
-      this.car.engineSound.stop();
+      this.car.engineSound?.stop();
+      this.ghostCar?.engineSound?.stop();
 
       // Pause countdown sound:
-      this.countdownSynth?.disconnect();
-      this.countdownSynth = undefined;
+      if(this.countdownSynth) {
+        this.countdownSynth.disconnect().releaseAll();
+        
+        // Wait for synth sounds to stop, then dispose safely:
+        const synth = this.countdownSynth;
+        setTimeout(() => {
+          synth.dispose();
+        }, 10000);
+        this.countdownSynth = undefined;
+      }
 
-      // Disconnection volume node:
+      // Disconnect volume node:
       this.volumeNode.disconnect();
 
     }
@@ -463,143 +479,114 @@ export class Race {
       this.playTimeElapsed += millisecondsElapsed;
 
       // Catch up game state to current time based off of update rate:
-      for(; this.gameTime <= this.playTimeElapsed; this.gameTime += Race.msPerUpdate) {
+      while(this.gameTime <= this.playTimeElapsed && this.state == RaceState.PLAYING) {
 
-        // Get seconds per frame:
-        const t = Race.msPerUpdate / 1000;
+        // Increment gameTime:
+        this.gameTime += Race.msPerUpdate
 
         // Check if update time is valid:
         if(this.gameTime % Race.msPerUpdate != 0) {
           throw new Error("Update time is out of sync with update rate.");
         }
 
-        // Check every update for playing state:
-        if(this.state == RaceState.PLAYING) {
+        // Record inputs:
+        const inputs = 
+          (this.car.up ? 0b0001 : 0) | 
+          (this.car.down ? 0b0010 : 0) |
+          (this.car.left ? 0b0100 : 0) |
+          (this.car.right ? 0b1000 : 0);
+        const lastRecord = this.inputHistory[this.inputHistory.length - 1];
+        if(!lastRecord || (inputs != lastRecord.inputs) || (this.turnSensitivity != lastRecord.turnSensitivity)) {
+          this.inputHistory.push({
+            inputs,
+            timestamp: this.gameTime,
+            turnSensitivity: this.turnSensitivity
+          });
+        }
 
-          // Record inputs:
-          const inputs = 
-            (this.car.up ? 0b0001 : 0) | 
-            (this.car.down ? 0b0010 : 0) |
-            (this.car.left ? 0b0100 : 0) |
-            (this.car.right ? 0b1000 : 0);
-          const lastRecord = this.inputHistory[this.inputHistory.length - 1];
-          if(!lastRecord || (inputs != lastRecord.inputs) || (this.turnSensitivity != lastRecord.turnSensitivity)) {
-            this.inputHistory.push({
-              inputs,
-              timestamp: this.gameTime,
-              turnSensitivity: this.turnSensitivity
-            });
+        // Update ghost car:
+        if(this.ghostCar && this.ghostCarInputHistory && this.ghostCar.laps.length < this.totalLaps) {
+
+          // Get current input:
+          let currentInput = this.ghostCarInputHistory[this.ghostCarLastInputIndex];
+
+          // Iterate to next input if ready:
+          const nextInput = this.ghostCarInputHistory[this.ghostCarLastInputIndex + 1];
+          if(nextInput && nextInput.timestamp <= this.gameTime) {
+            currentInput = nextInput;
+            this.ghostCarLastInputIndex++;
           }
 
-          // Update ghost car:
-          if(this.ghostCar && this.ghostCarInputHistory) {
+          // Check current input validity:
+          if(currentInput.timestamp % Race.msPerUpdate != 0) {
+            throw new Error("Ghost car input timestamp out of sync with update rate.");
+          }
 
-            // Get current input:
-            let currentInput = this.ghostCarInputHistory[this.ghostCarLastInputIndex];
+          // update ghost car inputs:
+          this.ghostCar.up =     !!(currentInput.inputs & 0b0001);
+          this.ghostCar.down =   !!(currentInput.inputs & 0b0010);
+          this.ghostCar.left =   !!(currentInput.inputs & 0b0100);
+          this.ghostCar.right =  !!(currentInput.inputs & 0b1000);
+          this.ghostCar.turnSensitivity = currentInput.turnSensitivity;
 
-            // Iterate to next input if ready:
-            const nextInput = this.ghostCarInputHistory[this.ghostCarLastInputIndex + 1];
-            if(nextInput && nextInput.timestamp <= this.gameTime) {
-              currentInput = nextInput;
-              this.ghostCarLastInputIndex++;
+          // Update to current frame time
+          this.ghostCar.update(Race.msPerUpdate);
+        }
+
+        // Current lap number:
+        const currentLap = this.car.laps.length;
+        
+        // Update Car movement:
+        this.car.update(Race.msPerUpdate);
+
+        // Update laps store if lap completed:
+        if(this.car.laps.length > currentLap) {
+          this.stores.completedLaps.set(this.car.laps);
+        }
+
+        // Check if all laps are complete:
+        if(this.car.laps.length == this.totalLaps) {
+
+          // Pause game:
+          this.pause();
+          this.state = RaceState.DONE
+
+          // Save in race history:
+          history.update(history => {
+
+            // Get race time:
+            const raceTime = this.car.laps[this.totalLaps - 1];
+            this.gameTime = raceTime;
+            this.stores.gameTime.set(raceTime);
+
+            // Check if personal best:
+            const pastRaces = history.filter(race => race.seed == this.seed);
+            const bestRace = pastRaces.length > 0 ? pastRaces.reduce((a,b) => a.laps[a.laps.length - 1] < b.laps[b.laps.length - 1] ? a : b) : undefined;
+            const bestTime = bestRace ? bestRace.laps[bestRace.laps.length - 1] : undefined;
+            const isPersonalBest = bestTime === undefined || raceTime <= bestTime;
+
+            // Update text:
+            this.stores.centerText.set(`${isPersonalBest ? "Personal Best" : "Race Complete"}!\nTime: ${formatMsTime(raceTime)}`);
+
+            // Store replay if best:
+            if(isPersonalBest) {
+              localStorage.setItem(`pb:${this.seed}`, arrayBufferToString(this.getReplayBuffer()));
             }
 
-            // Check current input validity:
-            if(currentInput.timestamp % Race.msPerUpdate != 0) {
-              throw new Error("Ghost car input timestamp out of sync with update rate.");
-            }
+            return [{
+              seed: this.seed,
+              timestamp: Date.now(),
+              laps: this.car.laps
+            }, ...history];
+          });
+        }
 
-            // update ghost car inputs:
-            this.ghostCar.up =     !!(currentInput.inputs & 0b0001);
-            this.ghostCar.down =   !!(currentInput.inputs & 0b0010);
-            this.ghostCar.left =   !!(currentInput.inputs & 0b0100);
-            this.ghostCar.right =  !!(currentInput.inputs & 0b1000);
-            this.ghostCar.turnSensitivity = currentInput.turnSensitivity;
-
-            // Update to current frame time
-            this.ghostCar.update(t, this.track);
-          }
-
-          // Get current car position:
-          const lastCarPos = this.car.body.position.copy();
-          
-          // Update Car movement:
-          this.car.update(t, this.track);
-
-          // Get new car position:
-          const newCarPos = this.car.body.position.copy();
-
-          // Get checkpoints:
-          const checkpoints = this.track.nearTrigons(newCarPos, (Car.noseXOffset - Car.wheelPositions.backLeft.position.x) / 2);
-          for(const checkpoint of checkpoints) {
-            this.checkpoints.add(checkpoint);
-          }
-
-          // Check if car has touched at least 80% of checkpoints:
-          if(this.checkpoints.size > 0.8 * this.track.totalTrigons()) {
-
-            // Check if car has cross finish line:
-            const noseOffset = new Vector(Car.noseXOffset, 0).qRotate(this.car.body.orientation);
-            const startLineDiff = Vector.sub(this.track.startLine.p1, this.track.startLine.p0);
-            if(linesCross(
-              Vector.add(lastCarPos, noseOffset),
-              Vector.add(newCarPos, noseOffset),
-              Vector.sub(this.track.startLine.p0, Vector.mult(startLineDiff, 0.5)),
-              Vector.add(this.track.startLine.p1, Vector.mult(startLineDiff, 0.5))
-            )) {
-
-              console.log(`${(100 * this.checkpoints.size / this.track.totalTrigons()).toFixed(2)}%`);
-
-              // Reset checkpoints and add lap time:
-              this.checkpoints = new Set();
-              this.stores.completedLaps.update(laps => {
-
-                // Push lap time:
-                laps.push(this.gameTime);
-
-                // Check if all laps are complete:
-                if(laps.length == this.totalLaps) {
-
-                  // Pause game:
-                  this.pause();
-                  this.state = RaceState.DONE
-
-                  // Save in race history:
-                  history.update(history => {
-
-                    // Check if personal best:
-                    const pastRaces = history.filter(race => race.seed == this.seed);
-                    const bestRace = pastRaces.length > 0 ? pastRaces.reduce((a,b) => a.laps[a.laps.length - 1] < b.laps[b.laps.length - 1] ? a : b) : undefined;
-                    const bestTime = bestRace ? bestRace.laps[bestRace.laps.length - 1] : undefined;
-                    const isPersonalBest = bestTime === undefined || this.gameTime < bestTime;
-
-                    // Update text:
-                    this.stores.centerText.set(`${isPersonalBest ? "Personal Best" : "Race Complete"}!\nTime: ${formatMsTime(this.gameTime)}`);
-
-                    // Store replay if best:
-                    if(isPersonalBest) {
-                      localStorage.setItem(`pb:${this.seed}`, arrayBufferToString(this.getReplayBuffer()));
-                    }
-
-                    return [{
-                      seed: this.seed,
-                      timestamp: Date.now(),
-                      laps: laps
-                    }, ...history];
-                  });
-                }
-
-                return laps;
-              });
-            }
-          }
-
-          // Check if car is on track:
-          if(!this.car.isOnTrack()) {
-            this.state = RaceState.FAILED;
-            this.stores.centerText.set("Off track!\nRestart? (Space)");
-            this.car.engineSound.stop();
-          }
+        // Check if car is on track:
+        if(!this.car.isOnTrack()) {
+          this.state = RaceState.FAILED;
+          this.stores.centerText.set("Off track!\nRestart? (Space)");
+          this.car.engineSound?.stop();
+          this.ghostCar?.engineSound?.stop();
         }
       }
 
@@ -678,13 +665,17 @@ export class Race {
    */
   public destroy() {
 
+    // Set play state to destroyed:
+    this.state = RaceState.DESTROYED;
+
     // Remove listeners:
     for(const listener of this.eventListeners) {
       listener.element.removeEventListener(listener.event, listener.function);
     }
 
     // Destroy engine sound:
-    this.car.engineSound.dispose();
+    this.car.engineSound?.dispose();
+    this.ghostCar?.engineSound?.dispose();
 
     // Destroy countdown sound:
     this.countdownSynth?.dispose();
@@ -726,10 +717,50 @@ export class Race {
    * @param buffer Replay Buffer
    */
   public loadReplayBuffer(buffer: ArrayBuffer) {
-    if(this.state != RaceState.READY) throw new Error("Cannot load a replay after the race has started!");
-    const replay = Race.replayBufferToInputHistory(buffer);
-    if(replay.trackSeed !== this.seed) throw new Error("Replay track seed does not match!");
-    this.ghostCarInputHistory = replay.inputHistory;
+    if(this.gameTime == 0 || this.state == RaceState.DONE || this.state == RaceState.FAILED) {
+      const replay = Race.replayBufferToInputHistory(buffer);
+      if(replay.trackSeed !== this.seed) throw new Error("Replay track seed does not match!");
+      this.ghostCarInputHistory = replay.inputHistory;
+
+      // Get ghost lap times:
+      let laps: number[] = [];
+      let gameTime = 0;
+      let currentInputIndex = 0;
+      const car = new Car({ track: this.track, isGhostCar: true });
+      while(laps.length < this.totalLaps) {
+        // Add to game time:
+        gameTime += Race.msPerUpdate;
+
+        // Get current input:
+        let currentInput = replay.inputHistory[currentInputIndex];
+
+        // Iterate to next input if ready:
+        const nextInput = replay.inputHistory[currentInputIndex + 1];
+        if(nextInput && nextInput.timestamp <= gameTime) {
+          currentInput = nextInput;
+          currentInputIndex++;
+        }
+
+        // Update ghost car inputs:
+        car.up =     !!(currentInput.inputs & 0b0001);
+        car.down =   !!(currentInput.inputs & 0b0010);
+        car.left =   !!(currentInput.inputs & 0b0100);
+        car.right =  !!(currentInput.inputs & 0b1000);
+        car.turnSensitivity = currentInput.turnSensitivity;
+
+        // Update to current frame time
+        car.update(Race.msPerUpdate);
+
+        // Get laps:
+        laps = car.laps;
+      }
+
+      // Store laps:
+      this.stores.ghostLaps.set(laps);
+
+    } else {
+      throw new Error("Cannot load a replay after the race has started!");
+    }
   }
 
   /* Replay Buffer Constants */

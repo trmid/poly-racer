@@ -44,6 +44,8 @@
   :global(button), :global(input) {
     padding: 7px;
     border-radius: 7px;
+    background-color: #333;
+    border: none;
   }
 
   :global(button) {

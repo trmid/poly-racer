@@ -6,6 +6,7 @@ import type { Volume } from "tone";
 import { EngineSound } from "./engine";
 import type { Track } from "./track";
 import { writable } from "svelte/store";
+import { linesCross } from "./utils";
 
 // Turn sensitivity store:
 export const turnSensitivity = writable(0.5);
@@ -15,9 +16,13 @@ export class Car {
 
   // Car state:
   private onTrack = true;
+  private track: Track | undefined;
+  private checkpoints: Set<Trigon> = new Set();
+  private raceTime = 0;
+  readonly laps: number[] = [];
 
   // Engine Noise:
-  public readonly engineSound: EngineSound;
+  public readonly engineSound?: EngineSound;
 
   // Camera:
   public camera: Camera;
@@ -82,7 +87,20 @@ export class Car {
   public left = false;
   public right = false;
 
-  constructor(audioDestination: Volume, { turnSensitivity, isGhostCar, startLine }: { turnSensitivity?: number,isGhostCar?: boolean, startLine?: { p0: Vector, p1: Vector } } = {}) {
+  constructor({
+    audioDestination,
+    turnSensitivity,
+    isGhostCar,
+    track
+  }: {
+    audioDestination?: Volume
+    turnSensitivity?: number
+    isGhostCar?: boolean
+    track?: Track
+  } = {}) {
+
+    // Assign track:
+    this.track = track;
 
     // Assign optional variables:
     if(turnSensitivity && turnSensitivity > 0) this.turnSensitivity = turnSensitivity;
@@ -94,7 +112,9 @@ export class Car {
     }
 
     // Create engine sound:
-    this.engineSound = new EngineSound(audioDestination);
+    if(audioDestination) {
+      this.engineSound = new EngineSound(audioDestination);
+    }
 
     // Create Camera:
     this.camera = new Camera({
@@ -167,9 +187,9 @@ export class Car {
     this.body.addChild(this.frontRightAxel);
 
     // Align to start line:
-    if(startLine) {
-      const startLineDiff = Vector.sub(startLine.p1, startLine.p0);
-      const startLineMid = Vector.add(startLine.p0, Vector.mult(startLineDiff, 0.5));
+    if(track) {
+      const startLineDiff = Vector.sub(track.startLine.p1, track.startLine.p0);
+      const startLineMid = Vector.add(track.startLine.p0, Vector.mult(startLineDiff, 0.5));
       this.body.orientation = Quaternion.fromVector(startLineDiff, Vector.xAxis()).rotateZ(Math.PI/2);
       this.direction = Vector.xAxis().qRotate(this.body.orientation);
       this.body.position = Vector.sub(startLineMid, new Vector(Car.noseXOffset).qRotate(this.body.orientation));
@@ -177,8 +197,23 @@ export class Car {
 
   }
 
-  // TODO: Make car move at fixed t-interval regardless of framerate
-  public update(t: number, track: Track) {
+  public update(msElapsed: number) {
+
+    // Check if track exists:
+    if(!this.track) {
+      throw new Error("Car has not been assigned a track!");
+    }
+
+    // Convert to seconds:
+    const t = msElapsed / 1000;
+
+    // Add to race time:
+    const lastFrameTime = this.raceTime;
+    this.raceTime += msElapsed;
+
+    // Get current car position:
+    const lastCarPos = this.body.position.copy();
+
     // Handle Acceleration:
     this.acceleration = new Vector();
     if(this.up) {
@@ -218,7 +253,7 @@ export class Car {
     this.frontRightWheel.orientation.rotateY(t * this.speed / Car.wheelPositions.frontRight.radius);
 
     // Update engine noise:
-    this.engineSound.update(this.speed / Car.maxSpeed);
+    this.engineSound?.update(this.speed / Car.maxSpeed);
 
     // Handle turning:
     let turnDirection = (this.left ? 1 : 0) + (this.right ? -1 : 0);
@@ -255,7 +290,7 @@ export class Car {
     this.onTrack = false;
 
     // Front Left:
-    if(track.onTrack(Vector.qRotate(Car.wheelPositions.frontLeft.position, this.body.orientation).add(this.body.position), Car.wheelPositions.frontLeft.radius)) {
+    if(this.track.onTrack(Vector.qRotate(Car.wheelPositions.frontLeft.position, this.body.orientation).add(this.body.position), Car.wheelPositions.frontLeft.radius)) {
       this.onTrack = true;
       this.frontLeftWheel.material = this.wheelMaterial;
     } else {
@@ -263,7 +298,7 @@ export class Car {
     }
 
     // Front Right:
-    if(track.onTrack(Vector.qRotate(Car.wheelPositions.frontRight.position, this.body.orientation).add(this.body.position), Car.wheelPositions.frontRight.radius)) {
+    if(this.track.onTrack(Vector.qRotate(Car.wheelPositions.frontRight.position, this.body.orientation).add(this.body.position), Car.wheelPositions.frontRight.radius)) {
       this.onTrack = true;
       this.frontRightWheel.material = this.wheelMaterial;
     } else {
@@ -271,7 +306,7 @@ export class Car {
     }
 
     // Back Left:
-    if(track.onTrack(Vector.qRotate(Car.wheelPositions.backLeft.position, this.body.orientation).add(this.body.position), Car.wheelPositions.backLeft.radius)) {
+    if(this.track.onTrack(Vector.qRotate(Car.wheelPositions.backLeft.position, this.body.orientation).add(this.body.position), Car.wheelPositions.backLeft.radius)) {
       this.onTrack = true;
       this.backLeftWheel.material = this.wheelMaterial;
     } else {
@@ -279,13 +314,45 @@ export class Car {
     }
 
     // Back Right:
-    if(track.onTrack(Vector.qRotate(Car.wheelPositions.backRight.position, this.body.orientation).add(this.body.position), Car.wheelPositions.backRight.radius)) {
+    if(this.track.onTrack(Vector.qRotate(Car.wheelPositions.backRight.position, this.body.orientation).add(this.body.position), Car.wheelPositions.backRight.radius)) {
       this.onTrack = true;
       this.backRightWheel.material = this.wheelMaterial;
     } else {
       this.backRightWheel.material = this.offTrackWheelMaterial;
     }
 
+    // Get new car position:
+    const newCarPos = this.body.position.copy();
+
+    // Get checkpoints:
+    const checkpoints = this.track.nearTrigons(newCarPos, (Car.noseXOffset - Car.wheelPositions.backLeft.position.x) / 2);
+    for(const checkpoint of checkpoints) {
+      this.checkpoints.add(checkpoint);
+    }
+
+    // Check if car has touched at least 80% of checkpoints:
+    if(this.checkpoints.size > 0.8 * this.track.totalTrigons()) {
+
+      // Check if car has cross finish line:
+      const noseOffset = new Vector(Car.noseXOffset, 0).qRotate(this.body.orientation);
+      const startLineDiff = Vector.sub(this.track.startLine.p1, this.track.startLine.p0);
+      const noseIntersection = linesCross(
+        Vector.add(lastCarPos, noseOffset),
+        Vector.add(newCarPos, noseOffset),
+        Vector.sub(this.track.startLine.p0, Vector.mult(startLineDiff, 0.5)),
+        Vector.add(this.track.startLine.p1, Vector.mult(startLineDiff, 0.5))
+      );
+      if(noseIntersection !== undefined) {
+
+        console.log(`${(100 * this.checkpoints.size / this.track.totalTrigons()).toFixed(2)}%`);
+
+        // Reset checkpoints and add lap time:
+        this.checkpoints = new Set();
+
+        // Push actual lap time:
+        this.laps.push(lastFrameTime + msElapsed * noseIntersection);
+      }
+    }
   }
 
   public isOnTrack() {

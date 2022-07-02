@@ -52,7 +52,8 @@ export function inTrigonHitbox(trigon: Trigon, position: Vector) {
 }
 
 /**
- * Checks if the two lines intersect within the boundaries of the points specified.
+ * Checks if the two lines intersect within the boundaries of the points specified
+ * and returns the point of intersection as a range of [0-1] along the a0-a1 line.
  * 
  * @param a0 Vector
  * @param a1 Vector
@@ -64,26 +65,31 @@ export function linesCross(a0: Vector, a1: Vector, b0: Vector, b1: Vector) {
   // Make everything relative to a0 and the X-Axis, then check if relative b-line intersects with the axis between 0 and xMax:
   const aDiff = Vector.sub(a1, a0);
   const xMax = aDiff.mag();
+  if(xMax == 0) return undefined;
   const aAngle = (aDiff.y < 0 ? 1 : -1) * aDiff.angleBetween(Vector.xAxis());
   const b0r = Vector.sub(b0, a0).rotateZ(aAngle);
   const b1r = Vector.sub(b1, a0).rotateZ(aAngle);
 
-  if((b0r.y == 0 && b0r.x >= 0 && b0r.x <= xMax) || (b1r.y == 0 && b1r.x >= 0 && b1r.x <= xMax)) {
+  if(b0r.y == 0 && b0r.x >= 0 && b0r.x <= xMax) {
 
-    // Line touches on at least one endpoint
-    return true;
+    // Line touches on b0 endpoint
+    return b0r.x / xMax;
+  } else if(b1r.y == 0 && b1r.x >= 0 && b1r.x <= xMax) {
+
+    // Line touches on b1 endpoint
+    return b1r.x / xMax;
   } else if(Math.sign(b0r.y) != Math.sign(b1r.y)) {
 
     // Line crosses x-axis, find where
     const slope = (b1r.x - b0r.x) / (b1r.y - b0r.y);
     const intersectionX = b1r.x  - b1r.y * slope;
     if(intersectionX >= 0 && intersectionX <= xMax) {
-      return true;
+      return intersectionX / xMax;
     } else {
-      return false;
+      return undefined;
     }
   } else {
-    return false;
+    return undefined;
   }
 }
 
@@ -95,10 +101,12 @@ export function linesCross(a0: Vector, a1: Vector, b0: Vector, b1: Vector) {
  * @returns string
  */
 export const formatMsTime = (ms: number, full = false) => {
+  const negative = ms < 0;
+  ms = Math.abs(ms);
   const minutes = Math.floor(ms / (60 * 1000));
   const seconds = Math.floor(ms / 1000) % 60;
   const milliseconds = Math.floor(ms) % 1000;
-  return `${minutes > 0 || full ? `${zeroPad(minutes, 2)}:` : ""}${zeroPad(seconds, 2)}.${zeroPad(milliseconds, 3)}`;
+  return `${negative ? "- " : ""}${minutes > 0 || full ? `${full ? zeroPad(minutes, 2) : minutes}:` : ""}${(minutes > 0 || full) ? zeroPad(seconds, 2) : seconds}.${zeroPad(milliseconds, 3)}`;
 };
 
 /**

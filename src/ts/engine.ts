@@ -1,4 +1,4 @@
-import { AMSynth, FMSynth, Loop, MetalSynth, now, Synth, Transport, Volume } from "tone";
+import { AMSynth, FMSynth, FrequencyShifter, Loop, MetalSynth, NoiseSynth, now, PitchShift, PluckSynth, Sampler, Synth, Transport, Volume } from "tone";
 import type { Time } from "tone/build/esm/core/type/Units";
 
 export class EngineSound {
@@ -15,12 +15,16 @@ export class EngineSound {
   constructor(destination: Volume) {
 
     // Sound creation helpers:
-    const sounds: { synth: Synth | FMSynth | AMSynth | MetalSynth, loop: Loop, offset: Time }[] = [];
+    const sounds: { synth: Synth | FMSynth | AMSynth | MetalSynth | PluckSynth | NoiseSynth | Sampler, loop: Loop, offset: Time }[] = [];
     const addSound = (synth: typeof sounds[0]["synth"], baseFrequency: number, freqSpread: number, duration: Time, spacing: Time, offset: Time = 0) => {
       const sound = {
         synth,
         loop: new Loop(time => {
-          synth.triggerAttackRelease(baseFrequency + freqSpread * this.modifier, duration, time);
+          if(synth instanceof Sampler) {
+            if(!synth.loaded) return;
+          }
+          const modifier = this.modifier + ((this.modifier == 0 || this.modifier == 1) ? (time % 0.2) * 0.02 : 0);
+          synth.triggerAttackRelease(baseFrequency + freqSpread * modifier, duration, time);
         }, spacing).start(offset),
         offset
       };
@@ -30,20 +34,22 @@ export class EngineSound {
 
     // Add sounds:
     {
-      const sound = addSound(new FMSynth(), 100, 40, "32n", "8n");
-      sound.synth.volume.value = -2;
+
+      // Sample:
+      addSound(new Sampler({
+        urls: {
+          A1: "car-sound.wav"
+        },
+        baseUrl: "sounds/"
+      }), 70, 35, "4n", "16n").synth.volume.value = -12;
+
+      // Lows:
+      addSound(new FMSynth(), 200, 100, "16n", "8n").synth.volume.value = -4;
+      addSound(new FMSynth(), 100, 50, "8n", "8n").synth.volume.value = -4;;
+
+      // Highs:
+      addSound(new AMSynth(), 400, 200, "16n", "8n").synth.volume.value = -10;
     }
-    // Octaves:
-    addSound(new AMSynth(), 80, 60, "12n", "8n");
-    addSound(new AMSynth(), 160, 120, "12n", "8n", "16n")
-
-    // Octaves:
-    // addSound(new FMSynth(), 50, 110, "12n", "6n", "12n");
-    // addSound(new AMSynth(), 100, 180, "12n", "6n");
-
-    // Octaves:
-    addSound(new FMSynth(), 100, 39, "16n", "10n", "20n");
-    addSound(new AMSynth(), 200, 78, "16n", "10n");
 
     // Set stop function:
     this.stop = () => {
@@ -74,11 +80,11 @@ export class EngineSound {
 
     // Set the dispose function:
     this.dispose = () => {
-      this.disposed = true;
       for(const sound of sounds) {
         sound.loop.dispose();
         sound.synth.dispose();
       }
+      this.disposed = true;
     };
   }
 

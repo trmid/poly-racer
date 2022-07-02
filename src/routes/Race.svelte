@@ -4,7 +4,7 @@
   import { push } from "svelte-spa-router";
   import { history, Race, RaceState } from "../ts/race";
   import { generate32bitSeed, isValidSeed } from "../ts/random";
-  import { formatMsTime } from "../ts/utils";
+  import { formatMsTime, stringToArrayBuffer } from "../ts/utils";
   import TrackPreview from "../components/TrackPreview.svelte";
   import TrackTimes from "../components/TrackTimes.svelte";
   import { favourites } from "../ts/track";
@@ -27,6 +27,7 @@
   let state: RaceState;
   let gameTime = 0;
   let laps: number[] = [];
+  let ghostLaps: number[] = [];
   let lapTimes: (number | null)[];
   $: if(race) race.load(seed); // dynamic race load
   $: if(race) race.setTurnSensitivity($turnSensitivity); // dynamic turn sensitivity update
@@ -34,6 +35,7 @@
   $: while(lapTimes.length < race?.totalLaps ?? 0) {
     lapTimes.push(null);
   }
+  $: ghostLapTimes = ghostLaps.map((t,i) => t - ( i == 0 ? 0 : ghostLaps[i - 1]));
 
   // Track History:
   $: trackHistory = $history.filter(x => x.seed === seed).sort((a,b) => a.timestamp - b.timestamp);
@@ -72,6 +74,20 @@
     });
   };
 
+  // Replay Upload:
+  let replayFileInput: HTMLInputElement;
+  async function loadReplay() {
+    if(!replayFileInput.files) return;
+    const file = replayFileInput.files[0];
+    try {
+      race.loadReplayBuffer(await file.arrayBuffer());
+      alert("Replay loaded!");
+    } catch(err) {
+      console.error(err);
+      alert((<any>err).message);
+    }
+  }
+
   // On Mount:
   const unsubscribes: Unsubscriber[] = [];
   onMount(() => {
@@ -91,6 +107,7 @@
         race.stores.speed.subscribe(s => speed = s),
         race.stores.state.subscribe(s => state = s),
         race.stores.completedLaps.subscribe(l => laps = l),
+        race.stores.ghostLaps.subscribe(gl => ghostLaps = gl),
         race.stores.gameTime.subscribe(t => gameTime = t),
       );
       mounted = true;
@@ -124,10 +141,22 @@
   <div id="canvas-container" class="no-select">
     <canvas id="game-canvas" bind:this={canvas} width="900" height="640"></canvas>
     {#if race}
-      <div id="game-time"><i class="icofont-stopwatch"></i> {clock}</div>
+      <div id="game-time">
+        <i class="icofont-stopwatch"></i>
+        {clock}
+        {#if state == RaceState.DONE}
+          <span class="lap-diff" class:positive={laps[laps.length - 1] - ghostLaps[ghostLaps.length - 1] > 0}>{formatMsTime(laps[laps.length - 1] - ghostLaps[ghostLaps.length - 1])}</span>
+        {/if}
+      </div>
       <div id="lap-times">
         {#each lapTimes as lapTime, i }
-          <div><span>{i + 1}</span>{lapTime ? formatMsTime(lapTime) : ''}</div>
+          <div>
+            <span class="lap-num">{i + 1}</span>
+            {lapTime ? formatMsTime(lapTime) : ''}
+            {#if ghostLapTimes[i] && lapTimes[i]}
+              <span class="lap-diff" class:positive={(lapTimes[i] ?? 0) - ghostLapTimes[i] > 0}>{formatMsTime((lapTimes[i] ?? 0) - ghostLapTimes[i])}</span>
+            {/if}
+          </div>
         {/each}
       </div>
       <div id="speedometer">{speed.toFixed(0)} km/h</div>
@@ -162,11 +191,19 @@
             </div>
           </td>
         </tr>
+        <tr>
+          <th>Load Replay</th>
+          <td>
+            <div>
+              <input bind:this={replayFileInput} type="file" accept=".replay" on:change={() => loadReplay()}>
+            </div>
+          </td>
+        </tr>
       </table>
     </div>
     {#if trackHistory.length > 0 && personalBest}
       <div id="history">
-        <TrackTimes records={trackHistory} {personalBest} />
+        <TrackTimes {race} records={trackHistory} {personalBest} />
       </div>
     {/if}
   </div>
@@ -338,12 +375,26 @@
     text-align: left;
   }
 
-  #lap-times > div > span {
+  span.lap-num {
     background-color: #0004;
     font-weight: bold;
     border-radius: 5px;
     margin-right: 10px;
     padding: 5px 10px;
+  }
+
+  span.lap-diff {
+    margin-left: 5px;
+    font-weight: bold;
+    color: limegreen;
+  }
+
+  span.lap-diff.positive {
+    color: salmon;
+  }
+
+  span.lap-diff.positive::before {
+    content: "+ ";
   }
 
   #speedometer {
