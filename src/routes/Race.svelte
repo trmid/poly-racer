@@ -75,17 +75,24 @@
   };
 
   // Replay Upload:
-  let replayFileInput: HTMLInputElement;
-  async function loadReplay() {
-    if(!replayFileInput.files) return;
-    const file = replayFileInput.files[0];
-    try {
-      race.loadReplayBuffer(await file.arrayBuffer());
-      alert("Replay loaded!");
-    } catch(err) {
-      console.error(err);
-      alert((<any>err).message);
+  async function selectReplayFile() {
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = ".replay";
+    fileInput.onchange = async () => {
+      if(!(fileInput.files && fileInput.files[0])) return;
+      const file = fileInput.files[0];
+      try {
+        race.loadReplayBuffer(await file.arrayBuffer());
+        alert("Replay loaded!");
+      } catch(err) {
+        console.error(err);
+        alert((<any>err).message);
+      } finally {
+        fileInput.remove();
+      }
     }
+    fileInput.click();
   }
 
   // On Mount:
@@ -195,7 +202,7 @@
           <th>Load Replay</th>
           <td>
             <div>
-              <input bind:this={replayFileInput} type="file" accept=".replay" on:change={() => loadReplay()}>
+              <button on:click={() => selectReplayFile()}>Select Replay File</button>
             </div>
           </td>
         </tr>
@@ -430,8 +437,8 @@
   #settings td > div {
     display: flex;
     padding: 5px;
-    justify-content: center;
-    align-items: center;
+    justify-content: flex-end;
+    align-items: right;
   }
 
   #settings input[type="number"] {
