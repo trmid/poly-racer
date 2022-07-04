@@ -151,7 +151,7 @@
       <div id="game-time">
         <i class="icofont-stopwatch"></i>
         {clock}
-        {#if state == RaceState.DONE}
+        {#if state == RaceState.DONE && ghostLaps.length == laps.length}
           <span class="lap-diff" class:positive={laps[laps.length - 1] - ghostLaps[ghostLaps.length - 1] > 0}>{formatMsTime(laps[laps.length - 1] - ghostLaps[ghostLaps.length - 1])}</span>
         {/if}
       </div>
