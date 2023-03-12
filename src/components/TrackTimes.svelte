@@ -52,7 +52,9 @@
       {/each}
       <td class:hide={!pbReplayRaw} class="replay">
         {#if pbReplayRaw && record == personalBest}
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
           <i class="icofont-download" title="Download Replay" on:click={() => downloadReplay()} />
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
           <i class="icofont-ui-play" title="Load Replay" on:click={() => loadReplay()} />
         {/if}
       </td>

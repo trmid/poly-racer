@@ -1,0 +1,17 @@
+{
+  "cache": {
+    "files": {
+      "essential": [
+        "bundle/*",
+        "main.css",
+        "img/polyBG.webp",
+        "urchin.min.js"
+      ],
+      "ignore": [
+        "sw.js",
+        "bundle/bundle.js.map",
+        "CNAME"
+      ]
+    }
+  }
+}

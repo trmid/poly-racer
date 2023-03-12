@@ -2,29 +2,25 @@
 <html lang="en">
 
 <head>
+
+  <!-- Meta Tags -->
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="description" content="A generative low-poly racing game">
   <meta name="color-scheme" content="dark light">
 
+  <!-- Title -->
   <title>Poly Racer</title>
 
+  <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png">
-  <link rel="stylesheet" href="build/bundle.css">
+
+  <!-- Style -->
+  <link rel="stylesheet" href="bundle/bundle.css">
   <link rel="stylesheet" href="icofont/icofont.min.css">
 
-  <script defer src="build/bundle.js"></script>
-
-  <!-- Initialize Service Worker -->
-  <script>
-    if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        if ((location.pathname || "/").match(/\//)?.length == 1) {
-          navigator.serviceWorker.register("sw.js");
-        }
-      });
-    }
-  </script>
+  <!-- Scripts -->
+  <script defer src="bundle/bundle.js"></script>
 
   <!-- Initialize Urchin -->
   <script src="urchin.min.js"></script>
@@ -35,6 +31,18 @@
 </head>
 
 <body>
+
+  <!-- noscript content goes in this tag -->
+  <noscript>
+    <main>
+      <p>
+        Please enable javascript in your browser to use this app.
+      </p>
+    </main>
+  </noscript>
+
+  <!-- App -->
+
 </body>
 
 </html>
