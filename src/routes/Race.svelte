@@ -139,8 +139,10 @@
   Track Seed:
   <span class="seed">
     <span>{seed}</span>
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
     <i title="copy" class="copy-btn icofont-ui-copy" on:click={() => { navigator.clipboard.writeText(seed); alert("Seed Copied!"); }}/>
   </span>
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
   <i title={favourited ? "Un-Favourite" : "Favourite"} class="favourite-btn icofont-favourite" class:favourited={favourited} on:click={() => toggleFavorite(seed)}/>
 </div>
 
@@ -220,7 +222,9 @@
 <h2>Favourite Tracks:</h2>
 <div id="favourite-tracks">
   {#each favouritePage as seed}
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
     <div class="favourite-container" on:click={() => { push(`/race/${seed}`); canvas.scrollIntoView(); }}>
+      <!-- svelte-ignore a11y-click-events-have-key-events -->
       <i title={$favourites.has(seed) ? "Un-Favourite" : "Favourite"} class="favourite-btn icofont-favourite" class:favourited={$favourites.has(seed)} on:click={() => toggleFavorite(seed)}/>
       <TrackPreview {seed}/>
     </div>
@@ -236,6 +240,7 @@
 <h2>Other Random Tracks:</h2>
 <div id="random-tracks">
   {#each randomTrackArray as seed}
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
     <div on:click={() => { push(`/race/${seed}`); canvas.scrollIntoView(); }}>
       <TrackPreview {seed}/>
     </div>
@@ -249,11 +254,10 @@
   #track-header {
     font-size: 24px;
     margin-bottom: 1rem;
-    font-style: italic;
-    font-weight: bold;
   }
 
   #track-header > .seed {
+    font-family: ubuntu, sans-serif;
     font-size: 16px;
     font-weight: bold;
     font-style: italic;
@@ -364,12 +368,14 @@
     color: white;
     padding: 10px 20px;
     transform: translateX(-50%);
+    font-family: ubuntu, sans-serif;
   }
 
   #lap-times {
     position: absolute;
     top: 0;
     left: 0;
+    font-family: ubuntu, sans-serif;
   }
 
   #lap-times > div {
@@ -388,6 +394,7 @@
     border-radius: 5px;
     margin-right: 10px;
     padding: 5px 10px;
+    font-family: 'Fugaz One', sans-serif;
   }
 
   span.lap-diff {

@@ -4,6 +4,7 @@
       "essential": [
         "bundle/*",
         "main.css",
+        "img/logo.png",
         "img/polyBG.webp",
         "urchin.min.js"
       ],

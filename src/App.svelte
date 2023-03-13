@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Router, { link } from "svelte-spa-router";
+  import ServiceWorker from "./components/ServiceWorker.svelte";
   import Storage from "./components/Storage.svelte";
   import { routes } from "./routes";
 </script>
@@ -17,6 +18,8 @@
   <Storage />
 </main>
 
+<ServiceWorker />
+
 <style>
 
   :global(html), :global(body) {
@@ -28,7 +31,7 @@
   :global(body) {
     margin: 0;
     box-sizing: border-box;
-    font-family: Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+    font-family: 'Fugaz One', sans-serif;
     background-color: #ffea80;
     background-image: url('../img/polyBG.webp');
     background-size: cover;
@@ -50,6 +53,11 @@
 
   :global(button) {
     cursor: pointer;
+    font-family: inherit;
+  }
+
+  :global(h3, h2, h1) {
+    font-weight: normal;
   }
 
   header {

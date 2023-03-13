@@ -1,0 +1,15 @@
+{
+  "name": "Poly Racer",
+  "short_name": "Poly Racer",
+  "theme_color": "#BA2B3C",
+  "background_color": "#404040",
+  "display": "minimal-ui",
+  "start_url": "/",
+  "icons": [
+      {
+          "src": "/favicon.png",
+          "sizes": "512x512",
+          "purpose": "any maskable"
+      }
+  ]
+}

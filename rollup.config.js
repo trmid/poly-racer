@@ -46,11 +46,11 @@ const generateSW = () => ({
 	writeBundle: () => {
 
     // Build essential file cache list:
-    const essentialCache = new Set(["./", ...globSync(SSS.cache.files.essential, { ignore: [...SSS.cache.files.ignore], nodir: true, cwd: join(process.cwd(), out) })]);
+    const essentialCache = new Set(["./", ...globSync(SSS.cache.files.essential, { ignore: [...SSS.cache.files.ignore], nodir: true, cwd: join(process.cwd(), out) }).map(x => x.replaceAll(`\\`, "/"))]);
 		
 		// Build secondary file cache list:
 		const secondaryCache = new Set(
-      globSync("**/*", { ignore: [...SSS.cache.files.ignore, ...SSS.cache.files.essential], nodir: true, cwd: join(process.cwd(), out) })
+      globSync("**/*", { ignore: [...SSS.cache.files.ignore, ...SSS.cache.files.essential], nodir: true, cwd: join(process.cwd(), out) }).map(x => x.replaceAll(`\\`, "/"))
     );
 
 		// Read sw-template:

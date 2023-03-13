@@ -233,6 +233,9 @@ export class Race {
    */
   public load(seed: string) {
 
+    // Set ground color:
+    this.renderer.backgroundColor = new Color(parseInt(seed.substring(0,2), 16), 100 + parseInt(seed.substring(2,4), 16) * 0.5, 40, 0.9);
+
     // Stop car sound if it exists:
     if(this.car) {
       this.car.engineSound?.stop();

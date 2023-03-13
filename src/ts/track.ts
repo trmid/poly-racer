@@ -22,7 +22,7 @@ export class Track {
     // Build Urbject:
     this.urbject = new MeshUrbject({
       mesh: this.mesh,
-      material: preview ? new Material({ fill: new Color("white"), lit: false }) : new Material({fill: new Color(parseInt(seed.substring(0,2), 16), 100, 70)}),
+      material: preview ? new Material({ fill: new Color("white"), lit: false }) : new Material({fill: new Color("#404040")}),
       group: -2
     });
 
@@ -67,7 +67,7 @@ export class Track {
         new Vector(0, 0, 6)
       ));
       for(let i = 0; i < count; i++) {
-        const material = new Material({ fill: new Color(0, 100 + rand() * 80, rand() * 20, 0.9) });
+        const material = new Material({ fill: new Color(parseInt(seed.substring(0,2), 16) * (0.5 + rand() * 0.5), 100 + parseInt(seed.substring(2,4), 16) * 0.5, rand() * 40, 0.9) });
         let position = new Vector(rand() * 800 - 400, rand() * 800 - 400, 0);
         while(this.onTrack(position, radius)) {
           position = new Vector(rand() * 800 - 400, rand() * 800 - 400, 0);

@@ -62,36 +62,34 @@
 <!-- #################################################################################################### -->
 
 <span class="homeLogo">
-	<img src="favicon.png" alt="Poly Racer">
-	<span>Poly Racer</span>
+	<img src="img/logo.png" alt="Poly Racer">
 </span>
 
 <div class="homeInfo">
-	<span>Poly Racer is a generative low-poly racing game meant to be simple, fun and competitive.</span>
-	<span>Create a randomly generated racing track and challenge your friends to beat your best times.</span>
-</div>
-
-<div class="actionItems">
-	<span class="actionInfo">
-		<span class="ready">
-			<span>Are You</span>
-			<span>Ready?</span>
+	<h3>Get ready for low-poly racing with high speed competition!</h3>
+	<p>Create a randomly generated racing track and challenge your friends to beat your best times.</p>
+	<div class="actionItems">
+		<span class="actionInfo">
+			<span class="ready">
+				<span>Are You</span>
+				<span>Ready?</span>
+			</span>
+			<button class="race" on:click={() => push('/race')}>Race</button>
+			<span class="seed">
+				<span>Or generate a track based on a seed:</span>
+				<form class="seedForm" on:submit|preventDefault={() => navRaceWithSeed()}>
+					<input type="text" bind:value={seed} placeholder="Enter a seed here.">
+					<button type="submit">Go!</button>
+				</form>
+				{#if seedError !== ''}
+					<span class="error">{seedError}</span>
+				{/if}
+			</span>
 		</span>
-		<button class="race" on:click={() => push('/race')}>Start Racing</button>
-		<span class="seed">
-			<span>Or generate a track based on a seed:</span>
-			<form class="seedForm" on:submit|preventDefault={() => navRaceWithSeed()}>
-				<input type="text" bind:value={seed} placeholder="Enter a seed here.">
-				<button type="submit">Go!</button>
-			</form>
-			{#if seedError !== ''}
-				<span class="error">{seedError}</span>
-			{/if}
+		<span class="carPreview">
+			<canvas id="car" width="500" height="300" bind:this={carPreviewCanvas}/>
 		</span>
-	</span>
-	<span class="carPreview">
-		<canvas id="car" width="500" height="500" bind:this={carPreviewCanvas}/>
-	</span>
+	</div>
 </div>
 
 <!-- #################################################################################################### -->
@@ -102,23 +100,34 @@
 		display: flex;
 		justify-content: center;
 		align-items: center;
-		margin-bottom: .5em;
+		margin-bottom: 80px;
 		font-size: 5vw;
 	}
 
 	.homeLogo > img {
-		width: 1.6em;
-		height: 1.6em;
-		margin-right: .2em;
+		width: 600px;
+		max-width: 90vw;
 	}
 
 	.homeInfo {
 		display: flex;
 		flex-direction: column;
+		align-items: center;
+		padding: 1rem 2rem;
+		border-radius: 12px;
+		background-color: #404040;
+		background: linear-gradient(0deg, #404040ee, #222a);
+		border: 1px solid #333;
 	}
 
-	.homeInfo > span {
-		margin-bottom: 1em;
+	.homeInfo > h3 {
+		font-weight: normal;
+	}
+
+	.homeInfo > p {
+		font-family: sans-serif;
+		max-width: 400px;
+		margin-top: 0;
 	}
 
 	.actionItems {
@@ -149,7 +158,7 @@
 	}
 
 	.actionItems .actionInfo button.race {
-		width: 10em;
+		width: 8em;
 		margin: 1em 0;
 		padding: .2em 0;
 		font-size: 1.5em;
@@ -159,10 +168,14 @@
 		border-radius: 5px;
 	}
 
-	.actionItems .actioninfo .seed {
+	.actionItems > .actionInfo > .seed {
 		display: flex;
 		flex-direction: column;
 		justify-content: center;
+	}
+
+	.seed > span {
+		font-family: sans-serif;
 	}
 
 	.actionItems .actionInfo .seed .seedForm {
